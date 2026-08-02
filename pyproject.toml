@@ -1,0 +1,10 @@
+[project]
+name = "fastbuild123"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "build123d>=0.8.0",
+    "watchfiles>=1.1.1",
+]
