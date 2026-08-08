@@ -1,16 +1,20 @@
 # Python standards
 
-General Python and functional-design standards for this repo. These load
-automatically whenever Claude reads a `.py` file anywhere under `libraries/`.
-Infra-specific conventions (Modal, Jobs, the DAG orchestrator) live in
-`libraries/infra/CLAUDE.md` and `.claude/rules/modal-infra.md`.
+General Python and functional-design standards for this repo. They are binding
+whenever you design a plan, write or modify Python, or review Python — not just
+when writing new code.
+
+This file is imported by the repo-root `CLAUDE.md`, so it loads into context at
+the start of every session. A `PostToolUse` hook in `.claude/settings.json`
+re-injects it the first time any agent reads or edits a `.py` file, so subagents
+(planning, implementation, review) and post-compaction contexts get it too.
 
 ## Best Practices
 
 - Comments: default to none — clear names and small functions should carry the
   meaning. Add one only for genuinely abnormal behavior or non-obvious domain
   knowledge, and keep it to 1–3 lines. Remove obvious/simple comments. See
-  `libraries/infra/CONTRIBUTING.md`.
+  `CONTRIBUTING.md`.
 - Docstrings should be succinct and simple using familiar vocabulary over obtuse, academic sounding language.
 - When writing tests, focus on the specific unique functionality under test and avoid testing generic logic.
 - No lazy imports (unless absolutely necessary). Also include imports at the top
