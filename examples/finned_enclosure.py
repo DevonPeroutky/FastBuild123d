@@ -44,11 +44,13 @@ def finned_profile(
 ) -> Sketch:
     """Rounded outline with cooling fins along the two long sides.
 
-    Fins that touch fuse into a slab, so the count is capped by the span.
+    Fins that touch fuse into a slab, and a fin that runs into the corner arc
+    leaves a sliver the shell operation later chokes on — so the span is inset
+    by a whole fin width at each end and the count is capped by what is left.
     """
     corner = min(corner_radius, min(width, depth) / 2 - 1)
     core = RectangleRounded(width, depth, corner)
-    span = width - 2 * corner
+    span = width - 2 * corner - 2 * fin_width
     count = max(2, min(fin_count, int(span // (2 * fin_width))))
     pitch = span / (count - 1)
     fins = [
@@ -60,7 +62,7 @@ def finned_profile(
 
 
 def extruded_body(profile: Sketch, height: float) -> Part:
-    return extrude(profile, amount=height)
+    return extrude(profile, amount=height / 2, both=True)
 
 
 def hollowed(body: Part, wall: float) -> Part:
@@ -69,9 +71,10 @@ def hollowed(body: Part, wall: float) -> Part:
     return offset(body, -wall, openings=body.faces().sort_by(Axis.Z)[-1])
 
 
-def rounded_fins(shell: Part, fin_width: float, radius: float) -> Part:
-    """Round the fin tips — the outermost vertical edges on either flank."""
-    safe = min(radius, 0.4 * fin_width)
+def rounded_fins(shell: Part, fin_width: float, fin_depth: float, radius: float) -> Part:
+    """Round the fin tips — the outermost vertical edges on either flank. The
+    fillet has to stay inside the fin in both directions or OCC refuses it."""
+    safe = min(radius, 0.4 * fin_width, 0.4 * fin_depth)
     if safe <= 0:
         return shell
     flanks = shell.edges().filter_by(Axis.Z).group_by(Axis.Y)
@@ -138,21 +141,6 @@ def mounting_bosses(
 
 
 @app.part()
-def vent_grille(
-    width: Annotated[float, Range(40, 220, step=1, unit="mm")] = 136,
-    depth: Annotated[float, Range(30, 160, step=1, unit="mm")] = 86,
-    thickness: Annotated[float, Range(1, 6, step=0.5, unit="mm")] = 3,
-    cols: Annotated[int, Range(0, 30)] = 16,
-    rows: Annotated[int, Range(0, 20)] = 10,
-    hole_dia: Annotated[float, Range(1, 8, step=0.1, unit="mm")] = 3,
-    deburr: Annotated[float, Range(0, 1.5, step=0.1, unit="mm")] = 0.5,
-) -> Part:
-    return chamfered(
-        perforated_panel(width, depth, thickness, cols, rows, hole_dia), deburr
-    )
-
-
-@app.part()
 def enclosure(
     width: Annotated[float, Range(80, 220, step=1, unit="mm")] = 140,
     depth: Annotated[float, Range(60, 160, step=1, unit="mm")] = 90,
@@ -170,9 +158,12 @@ def enclosure(
     deburr: Annotated[float, Range(0, 1.5, step=0.1, unit="mm")] = 0.5,
     boss_dia: Annotated[float, Range(4, 16, step=0.5, unit="mm")] = 9,
 ) -> Part:
-    profile = finned_profile(width, depth, corner_radius, fin_count, fin_width, fin_depth)
+    # A corner no bigger than the wall shells down to a zero-radius inner
+    # corner, which MakeThickSolid refuses outright.
+    corner = max(corner_radius, wall + 0.5)
+    profile = finned_profile(width, depth, corner, fin_count, fin_width, fin_depth)
     shell = rounded_fins(
-        hollowed(extruded_body(profile, height), wall), fin_width, fin_radius
+        hollowed(extruded_body(profile, height), wall), fin_width, fin_depth, fin_radius
     )
     grille = vent_grille(
         width - 2 * wall,
@@ -190,3 +181,18 @@ def enclosure(
     lid.label = "grille"
     bosses.label = "bosses"
     return Compound(children=[shell, lid, bosses])
+
+
+@app.part()
+def vent_grille(
+    width: Annotated[float, Range(40, 220, step=1, unit="mm")] = 136,
+    depth: Annotated[float, Range(30, 160, step=1, unit="mm")] = 86,
+    thickness: Annotated[float, Range(1, 6, step=0.5, unit="mm")] = 3,
+    cols: Annotated[int, Range(0, 30)] = 16,
+    rows: Annotated[int, Range(0, 20)] = 10,
+    hole_dia: Annotated[float, Range(1, 8, step=0.1, unit="mm")] = 3,
+    deburr: Annotated[float, Range(0, 1.5, step=0.1, unit="mm")] = 0.5,
+) -> Part:
+    return chamfered(
+        perforated_panel(width, depth, thickness, cols, rows, hole_dia), deburr
+    )

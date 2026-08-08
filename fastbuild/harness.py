@@ -11,7 +11,7 @@ import traceback
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping
+from typing import Iterator, Mapping
 
 from fastbuild.errors import Error
 from fastbuild.registry import App
@@ -25,17 +25,34 @@ class LoadedModel:
     function_hashes: Mapping[str, str]
 
 
+FunctionDef = ast.FunctionDef | ast.AsyncFunctionDef
+
+
+def _qualified_functions(node: ast.AST, prefix: str) -> Iterator[tuple[str, FunctionDef]]:
+    """Every function in the tree paired with its `__qualname__`, so a nested
+    helper never collides with a same-named one elsewhere in the file."""
+    for child in ast.iter_child_nodes(node):
+        match child:
+            case ast.FunctionDef() | ast.AsyncFunctionDef():
+                qualname = prefix + child.name
+                yield qualname, child
+                yield from _qualified_functions(child, f"{qualname}.<locals>.")
+            case ast.ClassDef():
+                yield from _qualified_functions(child, f"{prefix}{child.name}.")
+            case _:
+                yield from _qualified_functions(child, prefix)
+
+
 def function_source_hashes(source: str) -> Mapping[str, str]:
-    """sha256 of each top-level function's source segment — the AST index the
-    caching layer keys on; unused by the UI itself."""
-    tree = ast.parse(source)
-    hashes = {}
-    for node in ast.walk(tree):
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            segment = ast.get_source_segment(source, node)
-            if segment is not None:
-                hashes[node.name] = hashlib.sha256(segment.encode()).hexdigest()
-    return MappingProxyType(hashes)
+    """sha256 of each function's source segment, keyed by qualname — the AST
+    index the caching layer keys on; unused by the UI itself."""
+    return MappingProxyType(
+        {
+            qualname: hashlib.sha256(segment.encode()).hexdigest()
+            for qualname, node in _qualified_functions(ast.parse(source), "")
+            if (segment := ast.get_source_segment(source, node)) is not None
+        }
+    )
 
 
 def load_model(path: Path) -> LoadedModel | Error:

@@ -60,6 +60,37 @@ def test_editing_a_function_changes_only_its_hash():
     assert before["b"] == after["b"]
 
 
+NESTED = textwrap.dedent(
+    """
+    def outer():
+        def helper():
+            return 1
+        return helper
+
+    class Shell:
+        def helper(self):
+            return 2
+
+    def helper():
+        return 3
+    """
+)
+
+
+def test_same_named_functions_hash_under_distinct_qualnames():
+    hashes = function_source_hashes(NESTED)
+    assert set(hashes) == {"outer", "outer.<locals>.helper", "Shell.helper", "helper"}
+    assert len({hashes["outer.<locals>.helper"], hashes["Shell.helper"], hashes["helper"]}) == 3
+
+
+def test_editing_a_nested_helper_does_not_touch_its_namesakes():
+    edited = function_source_hashes(NESTED.replace("return 1", "return 11"))
+    before = function_source_hashes(NESTED)
+    assert edited["outer.<locals>.helper"] != before["outer.<locals>.helper"]
+    assert edited["Shell.helper"] == before["Shell.helper"]
+    assert edited["helper"] == before["helper"]
+
+
 def test_export_values_validate_range_strictly(model_file):
     loaded = load_model(model_file)
     assert isinstance(loaded, LoadedModel)
