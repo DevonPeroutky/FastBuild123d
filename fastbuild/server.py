@@ -36,6 +36,7 @@ from fastbuild.session import (
     select_part,
     set_value,
 )
+from fastbuild.statelog import format_transition
 
 log = logging.getLogger("fastbuild")
 
@@ -49,9 +50,11 @@ class ViewerServer:
         *,
         drag_debounce_s: float = 0.2,
         watch_debounce_ms: int = 100,
+        debug: bool = False,
     ) -> None:
         self.model_path = model_path
         self.watch_debounce_ms = watch_debounce_ms
+        self.debug = debug
         self.state: SessionState | None = None
         self.load_error: str | None = None
         self.last_good: dict[str, Mapping[str, Any]] = {}
@@ -62,13 +65,18 @@ class ViewerServer:
         self._stop = asyncio.Event()
         self._watcher: asyncio.Task | None = None
 
+    def _set_state(self, action: str, new_state: SessionState) -> None:
+        if self.debug:
+            log.debug("%s", format_transition(action, self.state, new_state))
+        self.state = new_state
+
     async def startup(self, watch: bool) -> None:
         loaded = await asyncio.to_thread(load_model, self.model_path)
         if isinstance(loaded, Error):
             self.load_error = loaded.message
             self.last_status = BuildError(error=loaded.message)
         else:
-            self.state = initial_state(loaded.app)
+            self._set_state("startup", initial_state(loaded.app))
             self.submit_selected()
         if watch:
             self._watcher = asyncio.get_running_loop().create_task(self._watch())
@@ -112,10 +120,11 @@ class ViewerServer:
             await self.broadcast(self.last_status)
             return
         self.load_error = None
-        self.state = (
+        self._set_state(
+            "reload",
             initial_state(loaded.app)
             if self.state is None
-            else migrate(self.state, loaded.app)
+            else migrate(self.state, loaded.app),
         )
         await self.broadcast(init_message(self.state))
         self.submit_selected()
@@ -179,7 +188,7 @@ class ViewerServer:
                 if isinstance(new_state, Error):
                     log.warning("rejected set_param: %s", new_state.message)
                     return
-                self.state = new_state
+                self._set_state(f"set_param {part}.{name}={value!r} final={final}", new_state)
                 if part != self.state.selected:
                     return
                 if final:
@@ -191,7 +200,7 @@ class ViewerServer:
                 if isinstance(new_state, Error):
                     log.warning("rejected select_part: %s", new_state.message)
                     return
-                self.state = new_state
+                self._set_state(f"select_part {part}", new_state)
                 await self.broadcast(init_message(self.state))
                 if part in self.last_good:
                     await self.broadcast(ModelUpdate(part=part, shapes=self.last_good[part]))
@@ -205,11 +214,13 @@ def create_app(
     watch: bool = True,
     drag_debounce_s: float = 0.2,
     watch_debounce_ms: int = 100,
+    debug: bool = False,
 ) -> FastAPI:
     server = ViewerServer(
         model_path,
         drag_debounce_s=drag_debounce_s,
         watch_debounce_ms=watch_debounce_ms,
+        debug=debug,
     )
 
     @contextlib.asynccontextmanager

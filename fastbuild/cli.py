@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import sys
 import threading
 import webbrowser
@@ -53,6 +54,14 @@ def _load_or_exit(path: Path) -> LoadedModel:
     return loaded
 
 
+def _enable_debug_logging() -> None:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    logger = logging.getLogger("fastbuild")
+    logger.addHandler(handler)
+    logger.setLevel(logging.DEBUG)
+
+
 def _cmd_view(args: argparse.Namespace) -> None:
     import uvicorn
 
@@ -60,7 +69,9 @@ def _cmd_view(args: argparse.Namespace) -> None:
 
     path = Path(args.file).resolve()
     _load_or_exit(path)
-    app = create_app(path)
+    if args.debug:
+        _enable_debug_logging()
+    app = create_app(path, debug=args.debug)
     url = f"http://127.0.0.1:{args.port}"
     if not args.no_open:
         threading.Timer(0.8, webbrowser.open, args=[url]).start()
@@ -103,6 +114,11 @@ def build_parser() -> argparse.ArgumentParser:
     view.add_argument("file")
     view.add_argument("--port", type=int, default=8123)
     view.add_argument("--no-open", action="store_true")
+    view.add_argument(
+        "--debug",
+        action="store_true",
+        help="log every session state transition (action, diff, prev/next state)",
+    )
     view.set_defaults(func=_cmd_view)
 
     export = sub.add_parser("export", help="build a part headless and write STEP/STL")
