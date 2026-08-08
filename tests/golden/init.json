@@ -1,0 +1,34 @@
+{
+  "v": 1,
+  "type": "init",
+  "parts": [
+    {
+      "name": "box",
+      "params": [
+        {
+          "name": "width",
+          "kind": "slider",
+          "min": 10,
+          "max": 100,
+          "step": 1,
+          "unit": "mm",
+          "options": null,
+          "default": 40,
+          "value": 42
+        },
+        {
+          "name": "vented",
+          "kind": "checkbox",
+          "min": null,
+          "max": null,
+          "step": null,
+          "unit": null,
+          "options": null,
+          "default": false,
+          "value": true
+        }
+      ]
+    }
+  ],
+  "selected": "box"
+}

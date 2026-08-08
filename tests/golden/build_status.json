@@ -1,0 +1,16 @@
+[
+  {"v": 1, "type": "build_status", "state": "building"},
+  {
+    "v": 1,
+    "type": "build_status",
+    "state": "ok",
+    "timings": {"build_ms": 53.7, "tessellate_ms": 12.9},
+    "cache": null
+  },
+  {
+    "v": 1,
+    "type": "build_status",
+    "state": "error",
+    "error": "Traceback (most recent call last): ..."
+  }
+]

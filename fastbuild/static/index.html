@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>fastbuild</title>
+  <link rel="stylesheet" href="/static/vendor/three-cad-viewer.css" />
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="panel">
+      <header id="panel-header">
+        <span id="logo">fastbuild</span>
+        <select id="part-select" hidden></select>
+      </header>
+      <div id="params"></div>
+      <div id="status" class="hidden">
+        <div id="status-building" class="hidden"><span class="spinner"></span> building…</div>
+        <details id="status-error" class="hidden">
+          <summary>build failed — last good model shown</summary>
+          <pre id="error-traceback"></pre>
+        </details>
+      </div>
+      <div id="stats"></div>
+    </aside>
+    <main id="viewer-host">
+      <div id="cad_view"></div>
+    </main>
+  </div>
+  <script type="module" src="/static/app.js"></script>
+</body>
+</html>

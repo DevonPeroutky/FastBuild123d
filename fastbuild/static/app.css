@@ -1,0 +1,166 @@
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  background: #1e1e1e;
+  color: #ddd;
+}
+
+#app {
+  display: flex;
+  height: 100%;
+}
+
+#panel {
+  width: 300px;
+  flex: 0 0 300px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #333;
+  background: #252526;
+  overflow-y: auto;
+}
+
+#panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #333;
+}
+
+#logo {
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: #4fc3f7;
+}
+
+#part-select {
+  flex: 1;
+  background: #333;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+#params {
+  flex: 1;
+  padding: 12px 14px;
+}
+
+.param {
+  margin-bottom: 14px;
+}
+
+.param-label {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  color: #bbb;
+}
+
+.param-label .value {
+  color: #4fc3f7;
+  font-variant-numeric: tabular-nums;
+}
+
+.param input[type="range"] {
+  width: 100%;
+}
+
+.param input[type="number"] {
+  width: 100%;
+  background: #333;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.param select {
+  width: 100%;
+  background: #333;
+  color: #ddd;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.param.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.param .readonly-note {
+  color: #888;
+  font-style: italic;
+  font-size: 12px;
+}
+
+#status {
+  padding: 8px 14px;
+  border-top: 1px solid #333;
+}
+
+#status.hidden, #status-building.hidden, #status-error.hidden {
+  display: none;
+}
+
+#status-building {
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid #555;
+  border-top-color: #4fc3f7;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#status-error summary {
+  color: #ff6b6b;
+  background: #3a1f1f;
+  border: 1px solid #6e2b2b;
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+#error-traceback {
+  max-height: 240px;
+  overflow: auto;
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 4px;
+  padding: 8px;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+#stats {
+  padding: 6px 14px 10px;
+  color: #777;
+  font-size: 12px;
+  min-height: 24px;
+}
+
+#viewer-host {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
+}

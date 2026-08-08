@@ -92,25 +92,36 @@ Order = Pending | Shipped | Delivered
 
 Exceptions break normal control flow, hide failure modes from callers, and make composition difficult. Instead, encode the possibility of failure in the return type.
 
-```python
-def parse_age(raw: str) -> int | None:
-    """Use None for 'might be absent' cases."""
-    try:
-        age = int(raw)
-        return age if 0 < age < 150 else None
-    except ValueError:
-        return None
+Prefer a `Value | ErrorType` union — the Either pattern. The error is a small
+frozen dataclass, so `isinstance`/`match` discriminates the two arms and the
+type checker forces callers to handle failure before touching the value.
 
-def parse_age_explained(raw: str) -> tuple[str, None] | tuple[None, int]:
-    """Use an (error, None) | (None, value) pair when callers need failure context."""
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class Error:
+    message: str
+
+def parse_age(raw: str) -> int | Error:
     try:
         age = int(raw)
-        if not (0 < age < 150):
-            return (f"Age {age} out of range", None)
-        return (None, age)
     except ValueError:
-        return (f"'{raw}' is not a number", None)
+        return Error(f"'{raw}' is not a number")
+    if not (0 < age < 150):
+        return Error(f"Age {age} out of range")
+    return age
+
+age = parse_age(raw)
+if isinstance(age, Error):
+    return age          # errors compose: pass them straight up
+celebrate(age)          # narrowed to int from here on
 ```
+
+Use `int | None` for "might be absent" cases that need no explanation. Avoid
+the Go-style `tuple[str, None] | tuple[None, int]` pair: once unpacked into two
+variables, type checkers cannot correlate them, so every success path needs a
+redundant None-check or assert on the value.
 
 **When to throw:** only for true programmer errors (assertion failures, invariant violations) — things that indicate bugs, not expected runtime conditions.
 

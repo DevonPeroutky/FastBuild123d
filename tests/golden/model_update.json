@@ -1,0 +1,9 @@
+{
+  "v": 1,
+  "type": "model_update",
+  "part": "box",
+  "shapes": {
+    "instances": [],
+    "shapes": {"version": 3, "id": "/Group", "parts": []}
+  }
+}
