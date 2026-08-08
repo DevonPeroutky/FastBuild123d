@@ -22,16 +22,20 @@ def enclosure(
     depth: Annotated[float, Range(20, 160, step=1, unit="mm")] = 50,
     height: Annotated[float, Range(10, 80, step=1, unit="mm")] = 30,
     wall: Annotated[float, Range(0.8, 5, step=0.1, unit="mm")] = 2,
+    corner_radius: Annotated[float, Range(0, 30, step=0.5, unit="mm")] = 8,
     ribs: Annotated[int, Range(0, 8)] = 4,
     vented: bool = False,
     style: Literal["rounded", "chamfered"] = "rounded",
 ) -> Part:
     shell = Box(width, depth, height)
     edges = shell.edges().filter_by(Axis.Z)
-    if style == "rounded":
-        shell = fillet(edges, radius=min(width, depth) / 10)
-    else:
-        shell = chamfer(edges, length=min(width, depth) / 12)
+    # Two corners share each side, and OCC needs the walls to survive the cut.
+    corner = min(corner_radius, min(width, depth) / 2 - wall)
+    if corner > 0:
+        if style == "rounded":
+            shell = fillet(edges, radius=corner)
+        else:
+            shell = chamfer(edges, length=corner)
     shell = offset(shell, -wall, openings=shell.faces().sort_by(Axis.Z)[-1])
 
     for i in range(ribs):
