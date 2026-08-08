@@ -23,6 +23,8 @@ Infra-specific conventions (Modal, Jobs, the DAG orchestrator) live in
 - Coupling is the root of most evil.
 - Make state explicit.
 - Every piece of information should have a single source of truth.
+- Prefer making invalid state unrepresentable over fallbacks and error handling.
+  See "Prefer invariants over fallbacks and error handling" below.
 
 # Functional Design Principles
 
@@ -85,6 +87,61 @@ Order = Pending | Shipped | Delivered
 ```
 
 **Principle:** if a field only makes sense in certain states, it should only exist in those states. Never use nullable fields as a proxy for state transitions.
+
+### Prefer invariants over fallbacks and error handling
+
+When you find yourself writing a fallback, a default, or a defensive check,
+first ask whether the invalid state could be made unrepresentable instead. A
+fallback is a runtime apology for a type that was too permissive; an invariant
+deletes the failure mode entirely. Error handling is for conditions the caller
+genuinely cannot control (missing files, bad network, user input) — not for
+states your own code should never have produced.
+
+```python
+# Bad: the type permits an empty list, so every caller invents a fallback
+def average(xs: list[float]) -> float:
+    if not xs:
+        return 0.0          # silently wrong — 0.0 is not an average
+    return sum(xs) / len(xs)
+
+# Good: the type cannot express "no samples", so there is nothing to handle
+@dataclass(frozen=True)
+class Samples:
+    head: float
+    rest: tuple[float, ...]
+
+def average(s: Samples) -> float:
+    return (s.head + sum(s.rest)) / (1 + len(s.rest))
+```
+
+```python
+# Bad: config assembled loosely, then patched with defaults at every read site
+timeout = config.get("timeout") or 30
+retries = config.get("retries") or 3
+
+# Good: parse once at the boundary into a type where every field is present
+@dataclass(frozen=True)
+class Config:
+    timeout: int = 30
+    retries: int = 3
+
+def parse_config(raw: dict) -> Config | Error: ...
+```
+
+**Signals you are patching over a missing invariant:**
+
+- `or <default>`, `dict.get(k, fallback)`, or `getattr(x, k, fallback)` on data
+  you constructed yourself
+- `if x is None: return` guards repeated at several call sites for the same value
+- `try/except` around code whose failure would mean a bug, not a bad input
+- Validating the same condition in more than one function
+
+Each of these means the constraint lives in scattered checks rather than in the
+type. Move it into the type: parse and validate once at the boundary, then let
+the rest of the code assume a value that cannot be invalid. Where an invariant
+truly cannot be encoded in the type system, `assert` it once at the point of
+construction — a loud failure at the source beats a quiet fallback that
+propagates wrong data downstream.
 
 ---
 
@@ -346,6 +403,8 @@ Before writing or modifying code, run through these checks:
 2. **Is the data immutable?** Am I mutating an input when I should return a copy?
 3. **Are errors in the return type?** Or am I throwing/raising for expected failures?
 4. **Are illegal states possible?** Can I restructure the types to prevent them?
+   Every fallback, default, or defensive check is a candidate invariant — make
+   it unrepresentable instead of handling it.
 5. **Is description separated from execution?** Or is I/O tangled with logic?
 6. **Is this the weakest abstraction that works?** Am I over-sequencing independent operations?
 7. **Are invariants tested as properties?** Not just with a few hard-coded examples?
