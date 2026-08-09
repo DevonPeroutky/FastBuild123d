@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Annotated
 
-from fastbuild import App, Range
+from fastbuild import App, Group, Range
 from fastbuild.errors import Error
 from fastbuild.protocol import (
     BuildError,
@@ -22,10 +22,13 @@ GOLDEN = Path(__file__).parent / "golden"
 def _box_app() -> App:
     app = App()
 
+    # vented is declared before height but grouped, so the golden file locks
+    # the panel_order policy (ungrouped first), not just the group key.
     @app.part()
     def box(
         width: Annotated[float, Range(10, 100, step=1, unit="mm")] = 40,
-        vented: bool = False,
+        vented: Annotated[bool, Group("Options")] = False,
+        height: float = 30.0,
     ):
         ...
 

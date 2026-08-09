@@ -8,6 +8,7 @@
         {
           "name": "width",
           "kind": "slider",
+          "group": null,
           "min": 10,
           "max": 100,
           "step": 1,
@@ -17,8 +18,21 @@
           "value": 42
         },
         {
+          "name": "height",
+          "kind": "number",
+          "group": null,
+          "min": null,
+          "max": null,
+          "step": null,
+          "unit": null,
+          "options": null,
+          "default": 30.0,
+          "value": 30.0
+        },
+        {
           "name": "vented",
           "kind": "checkbox",
+          "group": "Options",
           "min": null,
           "max": null,
           "step": null,

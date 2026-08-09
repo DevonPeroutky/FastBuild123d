@@ -29,7 +29,7 @@ from build123d import (
     offset,
 )
 
-from fastbuild import App, Range
+from fastbuild import App, Group, Range
 
 app = App()
 
@@ -145,18 +145,20 @@ def enclosure(
     width: Annotated[float, Range(80, 220, step=1, unit="mm")] = 140,
     depth: Annotated[float, Range(60, 160, step=1, unit="mm")] = 90,
     height: Annotated[float, Range(30, 120, step=1, unit="mm")] = 55,
-    corner_radius: Annotated[float, Range(2, 30, step=0.5, unit="mm")] = 10,
-    wall: Annotated[float, Range(1.2, 4, step=0.1, unit="mm")] = 2,
-    fin_count: Annotated[int, Range(2, 40)] = 20,
-    fin_width: Annotated[float, Range(1, 6, step=0.5, unit="mm")] = 2.5,
-    fin_depth: Annotated[float, Range(0.5, 8, step=0.5, unit="mm")] = 3,
-    fin_radius: Annotated[float, Range(0, 2, step=0.1, unit="mm")] = 0.5,
-    panel_thickness: Annotated[float, Range(1, 6, step=0.5, unit="mm")] = 3,
-    vent_cols: Annotated[int, Range(0, 30)] = 16,
-    vent_rows: Annotated[int, Range(0, 20)] = 10,
-    vent_dia: Annotated[float, Range(1, 8, step=0.1, unit="mm")] = 3,
-    deburr: Annotated[float, Range(0, 1.5, step=0.1, unit="mm")] = 0.5,
-    boss_dia: Annotated[float, Range(4, 16, step=0.5, unit="mm")] = 9,
+    corner_radius: Annotated[float, Range(2, 30, step=0.5, unit="mm"), Group("Shell")] = 10,
+    wall: Annotated[float, Range(1.2, 4, step=0.1, unit="mm"), Group("Shell")] = 2,
+    fin_count: Annotated[int, Range(2, 40), Group("Fins")] = 20,
+    fin_width: Annotated[float, Range(1, 6, step=0.5, unit="mm"), Group("Fins")] = 2.5,
+    fin_depth: Annotated[float, Range(0.5, 8, step=0.5, unit="mm"), Group("Fins")] = 3,
+    fin_radius: Annotated[float, Range(0, 2, step=0.1, unit="mm"), Group("Fins")] = 0.5,
+    panel_thickness: Annotated[float, Range(1, 6, step=0.5, unit="mm"), Group("Ventilation")] = 3,
+    vent_cols: Annotated[int, Range(0, 30), Group("Ventilation")] = 16,
+    vent_rows: Annotated[int, Range(0, 20), Group("Ventilation")] = 10,
+    vent_dia: Annotated[float, Range(1, 8, step=0.1, unit="mm"), Group("Ventilation")] = 3,
+    deburr: Annotated[float, Range(0, 1.5, step=0.1, unit="mm"), Group("Ventilation")] = 0.5,
+    # Declared last but displayed under Shell — exercises panel_order's
+    # non-contiguous group reordering.
+    boss_dia: Annotated[float, Range(4, 16, step=0.5, unit="mm"), Group("Shell")] = 9,
 ) -> Part:
     # A corner no bigger than the wall shells down to a zero-radius inner
     # corner, which MakeThickSolid refuses outright.

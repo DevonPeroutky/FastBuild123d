@@ -10,7 +10,7 @@ from types import MappingProxyType
 from typing import Mapping
 
 from fastbuild.errors import Error
-from fastbuild.params import JsonValue, coerce, default_value, schema
+from fastbuild.params import JsonValue, coerce, default_value, panel_order, schema
 from fastbuild.protocol import Init, PartSchema
 from fastbuild.registry import PartDef
 
@@ -85,7 +85,8 @@ def init_message(state: SessionState) -> Init:
             PartSchema(
                 name=name,
                 params=tuple(
-                    schema(spec, state.values[name][spec.name]) for spec in part.params
+                    schema(spec, state.values[name][spec.name])
+                    for spec in panel_order(part.params)
                 ),
             )
             for name, part in state.parts.items()

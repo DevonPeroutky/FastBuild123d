@@ -22,7 +22,7 @@ geometry on screen with an error banner; fix the file and it recovers.
 ```python
 from typing import Annotated, Literal
 from build123d import Part, Box
-from fastbuild import App, Range
+from fastbuild import App, Group, Range
 
 app = App()
 
@@ -30,7 +30,7 @@ app = App()
 def enclosure(
     width:  Annotated[float, Range(20, 200, step=1, unit="mm")] = 80,
     wall:   Annotated[float, Range(0.8, 5, step=0.1, unit="mm")] = 2,
-    ribs:   Annotated[int, Range(0, 8)] = 4,
+    ribs:   Annotated[int, Range(0, 8), Group("Ribs")] = 4,
     vented: bool = False,
     style:  Literal["rounded", "chamfered"] = "rounded",
 ) -> Part:
@@ -40,7 +40,8 @@ def enclosure(
 Widget mapping: `float`/`int` + `Range` → slider, bare numbers → number input,
 `bool` → checkbox, `Literal`/`Enum` → dropdown. Every parameter needs a default —
 defaults are the initial build. Multiple `@app.part()` functions in one file get a
-part selector.
+part selector. Add `Group("Label")` to a parameter's annotation to place it under
+a named collapsible section in the panel; ungrouped parameters render first.
 
 ## Headless export
 

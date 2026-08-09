@@ -33,6 +33,13 @@ class Range:
     unit: str | None = None
 
 
+@dataclass(frozen=True)
+class Group:
+    """Places a parameter under a named collapsible section in the panel."""
+
+    label: str
+
+
 class ParamError(Exception):
     """Raised at decoration time for signatures the UI cannot represent."""
 
@@ -46,6 +53,7 @@ class Slider:
     integer: bool
     default: JsonValue
     unit: str | None = None
+    group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,12 +62,14 @@ class NumberInput:
     integer: bool
     default: JsonValue
     unit: str | None = None
+    group: str | None = None
 
 
 @dataclass(frozen=True)
 class Checkbox:
     name: str
     default: bool
+    group: str | None = None
 
 
 @dataclass(frozen=True)
@@ -68,12 +78,14 @@ class Dropdown:
     options: tuple[JsonValue, ...]
     default: JsonValue
     enum_class: type[enum.Enum] | None = None
+    group: str | None = None
 
 
 @dataclass(frozen=True)
 class Unsupported:
     name: str
     default_repr: str
+    group: str | None = None
 
 
 ParamSpec = Union[Slider, NumberInput, Checkbox, Dropdown, Unsupported]
@@ -122,14 +134,24 @@ def _range_from_metadata(name: str, metadata: Sequence[Any]) -> Range | None:
     )
 
 
-def _unwrap_annotated(name: str, hint: Any) -> tuple[Any, Range | None]:
+@dataclass(frozen=True)
+class Unwrapped:
+    base: Any
+    range: Range | None
+    group: str | None
+
+
+def _unwrap_annotated(name: str, hint: Any) -> Unwrapped:
     if typing.get_origin(hint) is not Annotated:
-        return hint, None
+        return Unwrapped(base=hint, range=None, group=None)
     base, *metadata = typing.get_args(hint)
+    group = next((m.label for m in metadata if isinstance(m, Group)), None)
+    if group is not None and not group.strip():
+        raise ParamError(f"parameter '{name}': Group label must not be empty")
     native = [m for m in metadata if isinstance(m, Range)]
     if native:
-        return base, native[0]
-    return base, _range_from_metadata(name, metadata)
+        return Unwrapped(base=base, range=native[0], group=group)
+    return Unwrapped(base=base, range=_range_from_metadata(name, metadata), group=group)
 
 
 def _default_step(base: type, rng: Range) -> float:
@@ -139,18 +161,19 @@ def _default_step(base: type, rng: Range) -> float:
 
 
 def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
-    base, rng = _unwrap_annotated(name, hint)
+    unwrapped = _unwrap_annotated(name, hint)
+    base, rng, group = unwrapped.base, unwrapped.range, unwrapped.group
 
     if base is bool:
         if not isinstance(default, bool):
             raise ParamError(f"parameter '{name}': default {default!r} is not a bool")
-        return Checkbox(name=name, default=default)
+        return Checkbox(name=name, default=default, group=group)
 
     if typing.get_origin(base) is Literal:
         options = typing.get_args(base)
         if default not in options:
             raise ParamError(f"parameter '{name}': default {default!r} not in {options}")
-        return Dropdown(name=name, options=tuple(options), default=default)
+        return Dropdown(name=name, options=tuple(options), default=default, group=group)
 
     if isinstance(base, type) and issubclass(base, enum.Enum):
         if not isinstance(default, base):
@@ -160,6 +183,7 @@ def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
             options=tuple(m.name for m in base),
             default=default.name,
             enum_class=base,
+            group=group,
         )
 
     if base in (int, float):
@@ -167,7 +191,7 @@ def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
             raise ParamError(f"parameter '{name}': default {default!r} is not a number")
         integer = base is int
         if rng is None:
-            return NumberInput(name=name, integer=integer, default=default)
+            return NumberInput(name=name, integer=integer, default=default, group=group)
         if not rng.min < rng.max:
             raise ParamError(f"parameter '{name}': Range min {rng.min} must be < max {rng.max}")
         step = rng.step if rng.step is not None else _default_step(base, rng)
@@ -181,9 +205,22 @@ def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
             integer=integer,
             default=default,
             unit=rng.unit,
+            group=group,
         )
 
-    return Unsupported(name=name, default_repr=repr(default))
+    return Unsupported(name=name, default_repr=repr(default), group=group)
+
+
+def panel_order(specs: tuple[ParamSpec, ...]) -> tuple[ParamSpec, ...]:
+    """Panel display order: ungrouped params first in signature order, then each
+    group's members contiguously, groups sequenced by first appearance."""
+    ungrouped = [s for s in specs if s.group is None]
+    labels: list[str] = []
+    for spec in specs:
+        if spec.group is not None and spec.group not in labels:
+            labels.append(spec.group)
+    grouped = [s for label in labels for s in specs if s.group == label]
+    return (*ungrouped, *grouped)
 
 
 def introspect(fn: Callable[..., Any]) -> tuple[ParamSpec, ...]:
@@ -276,6 +313,7 @@ def schema(spec: ParamSpec, value: JsonValue) -> dict[str, Any]:
     base: dict[str, Any] = {
         "name": spec.name,
         "kind": None,
+        "group": spec.group,
         "min": None,
         "max": None,
         "step": None,

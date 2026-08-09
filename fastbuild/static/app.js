@@ -30,6 +30,7 @@ const state = {
   display: null,
   rendered: false,
   renderedGroupId: null,
+  collapsedGroups: new Set(),
 };
 
 // --- viewer ------------------------------------------------------------
@@ -237,12 +238,38 @@ function widgetFor(param) {
   }
 }
 
+function groupContainer(label) {
+  const details = document.createElement("details");
+  details.className = "param-group";
+  const key = `${state.selected}::${label}`;
+  details.open = !state.collapsedGroups.has(key);
+  const summary = document.createElement("summary");
+  summary.textContent = label;
+  details.append(summary);
+  details.addEventListener("toggle", () => {
+    if (details.open) state.collapsedGroups.delete(key);
+    else state.collapsedGroups.add(key);
+  });
+  return details;
+}
+
 function renderPanel() {
   const part = state.parts.find((p) => p.name === state.selected);
   el.params.replaceChildren();
   if (!part) return;
+  // Relies on the server's panel_order guarantee (ungrouped first, groups
+  // contiguous); a repeated label here would emit a duplicate group.
+  let group = null;
   for (const param of part.params) {
-    el.params.append(widgetFor(param));
+    if (param.group === null) {
+      el.params.append(widgetFor(param));
+    } else {
+      if (group === null || group.label !== param.group) {
+        group = { label: param.group, container: groupContainer(param.group) };
+        el.params.append(group.container);
+      }
+      group.container.append(widgetFor(param));
+    }
   }
 }
 

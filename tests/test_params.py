@@ -7,13 +7,16 @@ from fastbuild.errors import Error
 from fastbuild.params import (
     Checkbox,
     Dropdown,
+    Group,
     NumberInput,
     ParamError,
     Range,
     Slider,
     Unsupported,
     coerce,
+    default_value,
     introspect,
+    panel_order,
     quantize,
     schema,
     to_python,
@@ -98,6 +101,74 @@ def test_coerce_rejects_wrong_types_and_unknown_options():
     assert isinstance(coerce(dropdown, "c"), Error)
     checkbox = Checkbox(name="v", default=False)
     assert isinstance(coerce(checkbox, 1), Error)
+
+
+def _every_form_grouped(label: str):
+    """One parameter per annotation form / construction site, all in Group(label),
+    plus one unannotated control."""
+
+    def part(
+        slider: Annotated[float, Range(0, 10), Group(label)] = 5,
+        number: Annotated[float, Group(label)] = 1.5,
+        toggle: Annotated[bool, Group(label)] = False,
+        literal: Annotated[Literal["x", "y"], Group(label)] = "x",
+        member: Annotated[Finish, Group(label)] = Finish.RAW,
+        weird: Annotated[dict, Group(label)] = {"a": 1},
+        plain: float = 2.0,
+    ):
+        ...
+
+    return part
+
+
+def test_group_label_propagates_through_every_annotation_form():
+    specs = introspect(_every_form_grouped("G"))
+    *grouped, plain = specs
+    for spec in grouped:
+        assert spec.group == "G"
+        assert schema(spec, default_value(spec))["group"] == "G"
+    assert plain.group is None
+    assert schema(plain, default_value(plain))["group"] is None
+
+
+def test_schema_emits_the_same_key_set_for_every_variant():
+    specs = introspect(_every_form_grouped("G"))
+    key_sets = {frozenset(schema(spec, default_value(spec))) for spec in specs}
+    assert len(key_sets) == 1
+
+
+def test_empty_or_blank_group_label_is_a_decoration_error():
+    for label in ("", "   "):
+
+        def part(w: Annotated[float, Group(label)] = 1.0):
+            ...
+
+        with pytest.raises(ParamError, match="Group label"):
+            introspect(part)
+
+
+def _interleaved():
+    def part(
+        a: Annotated[float, Group("X")] = 1.0,
+        b: float = 2.0,
+        c: Annotated[float, Group("Y")] = 3.0,
+        d: Annotated[float, Group("X")] = 4.0,
+    ):
+        ...
+
+    return introspect(part)
+
+
+def test_panel_order_ungrouped_first_then_groups_by_first_appearance():
+    ordered = panel_order(_interleaved())
+    assert [s.name for s in ordered] == ["b", "a", "d", "c"]
+
+
+def test_panel_order_is_an_idempotent_permutation():
+    specs = _interleaved()
+    ordered = panel_order(specs)
+    assert sorted(s.name for s in ordered) == sorted(s.name for s in specs)
+    assert panel_order(ordered) == ordered
 
 
 def test_enum_dropdown_round_trips_to_member():

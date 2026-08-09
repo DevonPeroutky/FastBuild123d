@@ -110,6 +110,28 @@ html, body {
   cursor: pointer;
 }
 
+.param-group {
+  margin-bottom: 14px;
+  border: 1px solid #333;
+  border-radius: 4px;
+}
+
+.param-group > summary {
+  padding: 6px 10px;
+  color: #bbb;
+  cursor: pointer;
+  user-select: none;
+}
+
+.param-group[open] > summary {
+  border-bottom: 1px solid #333;
+  margin-bottom: 10px;
+}
+
+.param-group > .param {
+  margin: 0 10px 12px;
+}
+
 .param .readonly-note {
   color: #888;
   font-style: italic;

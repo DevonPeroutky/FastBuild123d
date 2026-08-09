@@ -64,6 +64,7 @@ def enclosure(
 
 - `@app.part()` = registration + signature introspection + cache wiring (one decorator, shared with SPEC-caching). The function stays an ordinary callable.
 - Widget mapping (MVP): `float`/`int` + `Range` → slider (`step` defaults: int → 1, float → (max−min)/100); `float`/`int` without `Range` → free-spinning number input; `bool` → checkbox; `Literal[...]`/`Enum` → dropdown. Anything else → shown read-only at default with a "unsupported parameter type" note (never a crash).
+- `Group("Label")` in `Annotated` metadata places a parameter under a named collapsible section. Panel order is derived server-side (`panel_order`): ungrouped params first in signature order, then each group's members contiguously, groups sequenced by first appearance. Empty/blank labels are a decoration-time error.
 - Every parameter must have a default (error at decoration time otherwise) — defaults are the initial build.
 - `Range.step` is the slider quantum; the UI only ever emits quantized values, which is what keeps float cache keys stable (SPEC-caching §3.2.2).
 - Multiple `@part` functions in one file: all registered; a part selector dropdown sits above the param panel; one part displayed at a time (its params only). First-registered is the initial selection.
@@ -84,7 +85,7 @@ Failure: exception → `build_status: error` with traceback string; viewer keeps
 All messages: `{"v": 1, "type": ..., ...}`.
 
 Server → client:
-- `init {parts: [{name, params: [{name, kind, min, max, step, unit, options, default, value}]}], selected}` — on connect and after file save changes signatures.
+- `init {parts: [{name, params: [{name, kind, group, min, max, step, unit, options, default, value}]}], selected}` — on connect and after file save changes signatures. `params` arrives in panel display order.
 - `model_update {part, shapes}` — `shapes` is the `ocp_tessellate` output tree, with each shape node carrying its provenance key as `id`. MVP pushes the full tree each build; the per-shape keys are the hook for differential push later (punted).
 - `build_status {state: building|ok|error, error?, timings?, cache?}`.
 
