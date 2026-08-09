@@ -100,7 +100,6 @@ def memoize(
             trace(_raw_args_text(args, kwargs), NO_KEY, f"BYPASS {reason}", started)
             return result
 
-        bypassing.call_key = lambda values: Error(reason)  # type: ignore[attr-defined]
         bypassing.stage_count = len(quality.members)  # type: ignore[attr-defined]
         bypassing._fb_wrapper = True  # type: ignore[attr-defined]
         return bypassing
@@ -153,18 +152,6 @@ def memoize(
         trace(_encoded_args_text(encoded), key.short, "MISS", started)
         return result
 
-    def call_key(values: Mapping[str, Any]) -> CacheKey | Error:
-        try:
-            bound = signature.bind(**values)
-        except TypeError as exc:
-            return Error(str(exc))
-        bound.apply_defaults()
-        keyed = keyed_arguments(bound.arguments)
-        if isinstance(keyed, Error):
-            return keyed
-        return keyed[0]
-
-    wrapper.call_key = call_key  # type: ignore[attr-defined]
     wrapper.stage_count = len(quality.members)  # type: ignore[attr-defined]
     wrapper._fb_wrapper = True  # type: ignore[attr-defined]
     return wrapper

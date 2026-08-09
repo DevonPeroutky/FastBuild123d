@@ -148,7 +148,7 @@ class ViewerServer:
         before = self.store.stats()
         if self.debug:
             log.debug("%s", "\n" + f"── build {request.part} ".ljust(HEADER_WIDTH, "─"))
-        result = await self._in_worker(build_part, part_def, request.values, store=self.store)
+        result = await self._in_worker(build_part, part_def, request.values)
         match result:
             case BuildOutput(part=part, shapes=shapes, timings=timings):
                 self.last_good[part] = shapes

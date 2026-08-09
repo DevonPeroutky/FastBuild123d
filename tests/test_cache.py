@@ -1,5 +1,6 @@
-"""Cache subsystem tests (SPEC-caching §5): key laws, tagging laws, wiring,
-staleness, poisoning, guards, contagion, mesh revisits, and server behavior."""
+"""Cache subsystem tests (SPEC-caching §5, SPEC-mesh-caching §5): key laws,
+tagging laws, wiring, staleness, poisoning, guards, contagion, provenance-keyed
+meshing, and server behavior."""
 
 import asyncio
 import copy
@@ -11,8 +12,16 @@ from pathlib import Path
 from time import perf_counter
 
 import pytest
+from build123d import Box
+from ocp_tessellate.convert import to_ocpgroup
+from ocp_tessellate.tessellator import cache as mesh_cache
 
-from fastbuild.builder import BuildOutput, build_part
+from fastbuild.builder import (
+    FB_CACHE_PREFIX,
+    BuildOutput,
+    _provenance_ids,
+    build_part,
+)
 from fastbuild.cache.analysis import analyze_functions, resolve
 from fastbuild.cache.keys import CacheKey, encode_arg, fingerprint
 from fastbuild.cache.store import Store
@@ -53,6 +62,38 @@ CACHE_MODEL = textwrap.dedent(
     ):
         return studded(base(width), count)
     """
+)
+
+LABELED_MODEL = textwrap.dedent(
+    """
+    from typing import Annotated
+    from build123d import Box, Compound, Pos
+    from fastbuild import App, Range
+
+    app = App()
+
+    def slab(width: float):
+        return Box(width, 8, 2)
+
+    def knob(size: float):
+        return Box(size, size, size)
+
+    @app.part()
+    def assembly(
+        width: Annotated[float, Range(10, 100, step=1)] = 20,
+        size: Annotated[float, Range(1, 5, step=1)] = 2,
+    ):
+        base = slab(width)
+        base.label = "base"
+        top = Pos(0, 0, 6) * knob(size)
+        top.label = "top"
+        return Compound(children=[base, top])
+    """
+)
+
+MIXED_TAG_MODEL = LABELED_MODEL.replace(
+    "top = Pos(0, 0, 6) * knob(size)",
+    "top = Pos(0, 0, 6) * Box(size, size, size)",
 )
 
 GUARDS_MODEL = textwrap.dedent(
@@ -128,18 +169,17 @@ def test_unencodable_and_cyclic_arguments_return_errors():
 def test_call_styles_and_omitted_defaults_share_one_key(tmp_path):
     installed, _ = install(tmp_path, CACHE_MODEL)
     ns = installed.namespace
-    key_fn = installed.parts["widget"].fn.call_key
-    assert key_fn({"width": 20, "count": 2}) == key_fn({})
     positional = ns["widget"](20, 2)._fb_key
     by_keyword = ns["widget"](count=2, width=20)._fb_key
-    assert positional == by_keyword == key_fn({})
+    defaulted = ns["widget"]()._fb_key
+    assert isinstance(positional, CacheKey)
+    assert positional == by_keyword == defaulted
 
 
 def test_entry_point_is_wrapped_and_plain_load_is_not(tmp_path):
     installed, _ = install(tmp_path, CACHE_MODEL)
     wrapped_fn = installed.parts["widget"].fn
     assert getattr(wrapped_fn, "_fb_wrapper", False)
-    assert isinstance(wrapped_fn.call_key({}), CacheKey)
     raw = load_model(tmp_path / "model.py")
     assert isinstance(raw, LoadedModel)
     assert not hasattr(raw.parts["widget"].fn, "_fb_wrapper")
@@ -299,17 +339,82 @@ def test_joints_survive_pickle_roundtrip():
     assert "lid" in restored.joints
 
 
-def test_exact_revisit_hits_mesh_and_skips_build_entirely(tmp_path):
+def _ocp_group(root, name: str):
+    return to_ocpgroup(root, names=[name])[0]
+
+
+def test_provenance_ids_key_every_labeled_child(tmp_path):
+    """SPEC-mesh-caching laws 5.1/5.5: each labeled, tagged child maps to its own
+    instance under its own provenance digest, namespaced with `fb:`."""
+    installed, _ = install(tmp_path, LABELED_MODEL)
+    part = installed.parts["assembly"]
+    root = part.fn(**{spec.name: default_value(spec) for spec in part.params})
+    ids = _provenance_ids(root, _ocp_group(root, "assembly"))
+
+    assert len(ids) == len(root.children) == 2
+    assert {ref for ref, _ in ids} == {0, 1}
+    assert all(cache_id.startswith(FB_CACHE_PREFIX) for _, cache_id in ids)
+    by_ref = dict(ids)
+    for index, child in enumerate(root.children):
+        assert by_ref[index] == FB_CACHE_PREFIX + child._fb_key.digest
+
+
+def test_provenance_ids_decline_anything_but_a_flat_labeled_compound(tmp_path):
+    """Law 5.2: no exact correspondence, no substitution — never a partial one."""
+    installed, _ = install(tmp_path, LABELED_MODEL)
+    part = installed.parts["assembly"]
+    root = part.fn(**{spec.name: default_value(spec) for spec in part.params})
+    group = _ocp_group(root, "assembly")
+
+    bare = Box(2, 2, 2)
+    assert _provenance_ids(bare, _ocp_group(bare, "bare")) == ()
+
+    group.objects[0].name = "renamed"
+    assert _provenance_ids(root, group) == ()
+
+
+def test_untagged_children_get_no_override(tmp_path):
+    """Law 5.3: a child no wrapper produced carries no key, so it is skipped —
+    its siblings still map."""
+    installed, _ = install(tmp_path, MIXED_TAG_MODEL)
+    part = installed.parts["assembly"]
+    root = part.fn(**{spec.name: default_value(spec) for spec in part.params})
+    ids = _provenance_ids(root, _ocp_group(root, "assembly"))
+
+    assert len(root.children) == 2
+    assert [getattr(c, "_fb_key", None) is None for c in root.children] == [False, True]
+    assert len(ids) == 1
+    assert ids[0][0] == 0
+
+
+def test_cache_served_children_do_not_re_mesh(tmp_path):
+    """The point of the whole spec: rebuilding with unchanged parameters adds no
+    new tessellation entries, because provenance digests survive the store's copy
+    where ocp_tessellate's content hash does not."""
+    installed, _ = install(tmp_path, LABELED_MODEL)
+    part = installed.parts["assembly"]
+    values = {spec.name: default_value(spec) for spec in part.params}
+    assert isinstance(build_part(part, values), BuildOutput)
+    before = len(mesh_cache)
+    assert isinstance(build_part(part, values), BuildOutput)
+    assert len(mesh_cache) == before
+
+
+def test_exact_revisit_recomputes_nothing(tmp_path):
+    """SPEC-mesh-caching §3.5: the root mesh cache is gone, so a revisit re-runs
+    the build — but every stage hits, and the scene metadata is unchanged."""
     installed, store = install(tmp_path, CACHE_MODEL)
     part = installed.parts["widget"]
     values = {spec.name: default_value(spec) for spec in part.params}
-    first = build_part(part, values, store=store)
+    first = build_part(part, values)
     assert isinstance(first, BuildOutput)
-    revisit = build_part(part, values, store=store)
+    before = store.stats()
+    revisit = build_part(part, values)
     assert isinstance(revisit, BuildOutput)
-    assert revisit.timings == {"build_ms": 0.0, "tessellate_ms": 0.0}
-    assert revisit.shapes is first.shapes
-    assert store.stats().mesh_hits == 1
+    after = store.stats()
+    assert after.misses == before.misses
+    assert after.hits > before.hits
+    assert revisit.shapes["shapes"] == first.shapes["shapes"]
 
 
 def test_hit_is_much_cheaper_than_miss(tmp_path):
@@ -350,7 +455,7 @@ def test_closure_hashes_cover_transitive_callees_and_cycles_terminate():
 
 
 def _stats(misses: int = 0, bypasses: int = 0) -> FrozenStats:
-    return FrozenStats(hits=0, misses=misses, bypasses=bypasses, mesh_hits=0, entries=0)
+    return FrozenStats(hits=0, misses=misses, bypasses=bypasses, entries=0)
 
 
 def test_cache_summary_hit_rate_clamps_and_tolerates_missing_stages():
@@ -398,7 +503,7 @@ async def _set_width(server, client, value):
     await server.queue.join()
 
 
-async def test_build_status_carries_cache_stats_and_mesh_hits_read_as_hits(tmp_path):
+async def test_build_status_carries_cache_stats_and_revisit_reads_as_hit(tmp_path):
     path = tmp_path / "model.py"
     path.write_text(CACHE_MODEL)
     server = ViewerServer(path, drag_debounce_s=0.02)

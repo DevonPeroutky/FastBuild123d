@@ -133,12 +133,3 @@ def key_of(qualname: str, closure_hash: str, encoded: EncodedArgs) -> CacheKey:
     lines = [qualname, closure_hash]
     lines.extend(f"{name}={fingerprint(value)}" for name, value in encoded)
     return CacheKey(qualname=qualname, digest=_sha("\n".join(lines)))
-
-
-def call_key(
-    qualname: str, closure_hash: str, arguments: Mapping[str, object]
-) -> CacheKey | Error:
-    encoded = encode_arguments(arguments)
-    if isinstance(encoded, Error):
-        return encoded
-    return key_of(qualname, closure_hash, encoded)

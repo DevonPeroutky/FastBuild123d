@@ -43,7 +43,13 @@ Measured against the committed reference model (Phase 0), not hypothetical numbe
    vacuous, since no slider touches only the shell and the shell chain alone is
    ~2273ms): dragging `boss_dia` (touches only `mounting_bosses`, 5ms) costs
    ≤ 105ms; dragging `vent_dia` (touches only the grille branch, 666ms) costs
-   ≤ 766ms. The ceiling for *any* slider is the cost of the most expensive stage
+   ≤ 766ms. **The `vent_dia` figure is wrong and is superseded by
+   `SPEC-mesh-caching.md` §2.1 (≤ 1600ms).** 766ms was derived as "666ms build +
+   100ms" — it budgets the *build* cost of the branch the slider touches and
+   omits the *mesh* cost of the child that changed, which is 850ms on its own.
+   No mesh cache of any design reaches 766ms; the lever is drag-time
+   `angular_tolerance`, filed there. The `boss_dia` figure stands and is met.
+   The ceiling for *any* slider is the cost of the most expensive stage
    it touches — `fin_radius` must rebuild `rounded_fins` (1498ms) and no cache
    can help it; that ceiling is stated, not hidden. Phase 1 cannot deliver even
    the `boss_dia` case: its single mesh is keyed on the part function's *call*
@@ -54,6 +60,10 @@ Measured against the committed reference model (Phase 0), not hypothetical numbe
    end-to-end including render (mesh hit on the part function's *call* key; the
    budget absorbs a ~28ms part-level deepcopy and ~13ms payload serialization —
    the unmeasured term is browser parse + GPU upload of the ~6.7MB payload).
+   **The budget stands; the mechanism is superseded by `SPEC-mesh-caching.md`
+   §3.5.** The call-key mesh cache is retired — a revisit now rebuilds with all
+   geometry hits and all per-instance mesh hits, measured at 47ms, so the
+   pre-build short-circuit is no longer worth a second key derivation.
 3. Editing any model-file function's body — including helpers, including code inside
    comprehensions — always invalidates dependent cache entries (zero stale-geometry
    cases from *function-body* edits; module-level constants and sibling-module
@@ -286,7 +296,10 @@ The threshold's real predicate is **copy cost vs build cost**, not memory:
 costs (0.5–29ms, scaling with face count); tune it against copies, not entry
 counts.
 
-**Meshes:** the key here is the part function's **call key** —
+**Meshes:** ⚠️ **Retired by `SPEC-mesh-caching.md` §3.5** — the whole of this
+paragraph, plus `part_def.fn.call_key`, `Store.get_mesh`/`put_mesh` and the
+`mesh` field of `CacheEntry`. Kept for the reasoning, which still explains why
+Phase 1 shipped this way. The key here is the part function's **call key** —
 `sha256(qualname, source_closure_hash, encoded bound-args)` — computable
 *before* `part_def.fn` runs (Phase 0 lesson 1: a revisit that still pays the
 build cannot land under 150ms). The wrapper installed by `install_cache`
@@ -374,17 +387,32 @@ Still deferred: per-build color shift on `last`, bypass-reason tooltips. The
 convention-teaching job (why a call bypassed) is carried by the Phase 1
 debug-trace and stats surface, which reports the same reasons.
 
-### Phase 3 — Per-child mesh assembly (gated on Phase 1 stats)
+### Phase 3 — Per-child meshing → **superseded by `SPEC-mesh-caching.md` ✅ (2026-08-09)**
 
-The piece that makes dragging fast rather than only revisits — §2.1 lives here,
-not in Phase 1: parts return
-Compounds whose provenance-tagged children tessellate individually against the mesh
-cache; scene JSON is stitched from cached + fresh nodes. Requires a SPEC-ui
-revision — per-shape provenance ids (the `id` slot exists) plus a per-node update
-message the protocol lacks. Written as its own spec once Phase 1's debug-trace and
-stats data from real models proves decomposition happens in practice (the footer
-carries the same counters and adds nothing the gate needs); if it doesn't, revisit
-the BREP-bytes-hashing fallback instead (§6).
+Still the piece that makes dragging fast rather than only revisits — §2.1 lives
+here, not in Phase 1 — but the mechanism below was reversed after checking what
+already exists. Keeping the original text would mislead; keeping the reasoning
+would not, so the reversal is recorded here and the design lives in its own spec.
+
+**The gate is met.** Phase 1's debug trace on the reference model shows real
+decomposition: 8 geometry entries, 5 hits on a `boss_dia` drag, build 3123ms →
+60ms. The BREP-bytes-hashing fallback (§6) is not needed.
+
+**What was planned:** parts return Compounds whose provenance-tagged children
+tessellate individually against the mesh cache; scene JSON stitched from cached +
+fresh nodes; a `ChildMesh` type, `Store.get_child_mesh`/`put_child_mesh`, a
+SPEC-ui revision for per-shape provenance ids, and a per-node update message.
+
+**Why it was reversed:** `ocp_tessellate` already memoizes per instance in a
+process-global LRU, and `tessellate()` takes `cache_key` as a *parameter*
+(`tessellator.py:567`). Supplying our provenance digest instead of its
+serialize-and-hash content id gets per-child mesh caching with no new types, no
+JSON re-assembly, no store change and no protocol change — roughly 15 lines in
+`builder.py`. Phase 0 lesson 2 (a `BRepBuilderAPI_Copy` misses that memo) stops
+being a constraint to work around and becomes the bug the substitution fixes.
+
+See `SPEC-mesh-caching.md` for the mechanism, invariants, measured results and
+the recommendation to retire this spec's root mesh cache (§3.5 there).
 
 ## 4. Module layout
 
@@ -396,6 +424,7 @@ fastbuild/                 # existing package
     store.py               # CacheEntry LRU, deepcopy discipline, stats (one mutator thread, snapshot readers)
   harness.py               # existing — LoadedModel gains namespace+parts; new install_cache(loaded, store)
   builder.py               # existing — consults mesh cache around tessellation
+                           #   (retired; see SPEC-mesh-caching.md §3.5)
   server.py                # existing — owns the store + single-worker executor, fills BuildOk.cache
   static/app.js, app.css   # existing — unchanged (Phase 2 keeps the plain-text footer)
 examples/finned_enclosure.py  # Phase 0 reference model
@@ -492,6 +521,7 @@ scripts/bench_model.py        # Phase 0 stage/part timing + --sweep extremes che
 
 ## References
 
+- `specs/SPEC-mesh-caching.md` — supersedes Phase 3; corrects §2.1's `vent_dia` target
 - [build123d issue #801 — cq_cache port POC and failure analysis](https://github.com/gumyr/build123d/issues/801)
 - [cq_cache plugin (CadQuery)](https://github.com/CadQuery/cadquery-plugins/tree/main/plugins/cq_cache)
 - [r/build123d — "Caching Build123D objects?" (origin thread for #801)](https://www.reddit.com/r/build123d/comments/1gnvd4n/caching_build123d_objects/)
