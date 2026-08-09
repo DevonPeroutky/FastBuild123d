@@ -20,7 +20,7 @@ def _app() -> App:
 
 
 def test_state_lines_renders_selected_and_one_line_per_part():
-    state = initial_state(_app())
+    state = initial_state(_app().parts)
     assert state_lines(state) == (
         "selected='box'",
         "box  width=40",
@@ -39,7 +39,7 @@ def test_state_lines_pads_part_names_to_common_width():
     def enclosure(depth: Annotated[float, Range(1, 50, step=1)] = 10):
         return depth
 
-    assert state_lines(initial_state(app)) == (
+    assert state_lines(initial_state(app.parts)) == (
         "selected='box'",
         "box        width=40",
         "enclosure  depth=10",
@@ -47,28 +47,28 @@ def test_state_lines_pads_part_names_to_common_width():
 
 
 def test_diff_initial():
-    assert state_diff(None, initial_state(_app())) == ("(initial state)",)
+    assert state_diff(None, initial_state(_app().parts)) == ("(initial state)",)
 
 
 def test_diff_value_change():
-    prev = initial_state(_app())
+    prev = initial_state(_app().parts)
     new = set_value(prev, "box", "width", 60)
     assert state_diff(prev, new) == ("box.width: 40 -> 60",)
 
 
 def test_diff_selection_change():
-    prev = initial_state(_app())
+    prev = initial_state(_app().parts)
     new = select_part(prev, "lid")
     assert state_diff(prev, new) == ("selected: 'box' -> 'lid'",)
 
 
 def test_diff_no_change():
-    state = initial_state(_app())
+    state = initial_state(_app().parts)
     assert state_diff(state, state) == ("(no change)",)
 
 
 def test_diff_migration_reports_added_and_removed_parts():
-    prev = initial_state(_app())
+    prev = initial_state(_app().parts)
 
     grown = App()
 
@@ -80,12 +80,12 @@ def test_diff_migration_reports_added_and_removed_parts():
     def base(depth: Annotated[float, Range(1, 50, step=1)] = 10):
         return depth
 
-    new = migrate(prev, grown)
+    new = migrate(prev, grown.parts)
     assert state_diff(prev, new) == ("-part 'lid'", "+part 'base'")
 
 
 def test_format_transition_layout():
-    prev = initial_state(_app())
+    prev = initial_state(_app().parts)
     new = set_value(prev, "box", "width", 60)
     text = format_transition("set_param box.width=60 final=True", prev, new)
     assert text.splitlines() == [
@@ -99,7 +99,7 @@ def test_format_transition_layout():
 
 
 def test_format_transition_initial_has_header_and_state():
-    new = initial_state(_app())
+    new = initial_state(_app().parts)
     text = format_transition("startup", None, new)
     assert text.splitlines() == [
         "",

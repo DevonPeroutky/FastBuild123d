@@ -111,7 +111,7 @@ def _timed(fn: Callable[..., Any], counter: _Counter) -> Callable[..., Any]:
 
 def _instrument(namespace: dict[str, Any]) -> _Instrumentation:
     """Wrap the model file's own functions in place. Call-time global lookup is
-    what makes this work — the same seam Phase 3's wrappers will use."""
+    what makes this work — the same seam Phase 1's wrappers will use."""
     originals = {
         name: value
         for name, value in namespace.items()
@@ -127,8 +127,8 @@ def _instrument(namespace: dict[str, Any]) -> _Instrumentation:
     return _Instrumentation(counters=counters, restore=restore)
 
 
-def measure(part: PartDef, case: Case) -> Result:
-    instrumentation = _instrument(part.fn.__globals__)
+def measure(part: PartDef, case: Case, namespace: dict[str, Any]) -> Result:
+    instrumentation = _instrument(namespace)
     try:
         outcome = build_part(part, case.values)
     finally:
@@ -179,12 +179,13 @@ def run(
     cases: Sequence[Case],
     repeat: int,
     show_stages: bool,
+    namespace: dict[str, Any],
 ) -> int:
     failures = 0
     for case in cases:
         part = parts[case.part]
         for _ in range(repeat):
-            result = measure(part, case)
+            result = measure(part, case, namespace)
             print(format_result(result))
             if isinstance(result, Failed):
                 failures += 1
@@ -221,7 +222,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         parts = {name: parts[name] for name in args.part}
 
     cases = default_cases(parts) + (sweep_cases(parts) if args.sweep else ())
-    return run(parts, cases, args.repeat, not args.no_stages)
+    namespace = loaded.namespace
+    assert isinstance(namespace, dict)  # the live exec dict, never a copy
+    return run(parts, cases, args.repeat, not args.no_stages, namespace)
 
 
 if __name__ == "__main__":

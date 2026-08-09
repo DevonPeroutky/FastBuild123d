@@ -33,7 +33,7 @@ def _box_app() -> App:
 
 
 def test_init_matches_golden_file():
-    state = initial_state(_box_app())
+    state = initial_state(_box_app().parts)
     for name, value in (("width", 42), ("vented", True)):
         state = set_value(state, "box", name, value)
         assert not isinstance(state, Error)
@@ -54,7 +54,7 @@ def test_build_status_variants_match_golden_file():
 
 
 def test_every_encoded_message_carries_the_envelope_version():
-    state = initial_state(_box_app())
+    state = initial_state(_box_app().parts)
     messages = [
         init_message(state),
         ModelUpdate(part="box", shapes={}),

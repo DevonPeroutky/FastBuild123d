@@ -14,7 +14,10 @@ const el = {
   building: document.getElementById("status-building"),
   error: document.getElementById("status-error"),
   traceback: document.getElementById("error-traceback"),
-  stats: document.getElementById("stats"),
+  statsLine: document.getElementById("stats-line"),
+  cacheProgress: document.getElementById("cache-progress"),
+  cacheProgressBar: document.getElementById("cache-progress-bar"),
+  cacheProgressValue: document.getElementById("cache-progress-value"),
   viewerHost: document.getElementById("viewer-host"),
   cadView: document.getElementById("cad_view"),
 };
@@ -272,11 +275,8 @@ function showStatus(msg) {
       el.error.classList.add("hidden");
       el.status.classList.add("hidden");
       const t = msg.timings || {};
-      const pieces = [`build ${t.build_ms}ms`, `tessellate ${t.tessellate_ms}ms`];
-      if (msg.cache) {
-        pieces.push(`cache ${msg.cache.hits ?? 0} hits / ${msg.cache.misses ?? 0} misses`);
-      }
-      el.stats.textContent = pieces.join(" · ");
+      el.statsLine.textContent = `build ${t.build_ms}ms · tessellate ${t.tessellate_ms}ms`;
+      showCacheProgress(msg.cache);
       break;
     }
     case "error":
@@ -286,6 +286,20 @@ function showStatus(msg) {
       el.traceback.textContent = msg.error;
       break;
   }
+}
+
+function showCacheProgress(cache) {
+  if (cache?.hit_rate == null) {
+    el.cacheProgress.classList.add("hidden");
+    return;
+  }
+  const pct = Math.round(cache.hit_rate * 100);
+  el.cacheProgress.classList.remove("hidden");
+  el.cacheProgressBar.style.width = `${pct}%`;
+  el.cacheProgressValue.textContent = `${pct}%`;
+  el.cacheProgress.title =
+    `${cache.rebuilt ?? "?"} of ${cache.stages ?? "?"} stages rebuilt · ` +
+    `session: ${cache.hits ?? 0} hits / ${cache.misses ?? 0} misses`;
 }
 
 // --- websocket ---------------------------------------------------------

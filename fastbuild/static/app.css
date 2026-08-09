@@ -122,7 +122,7 @@ html, body {
   border-top: 1px solid #333;
 }
 
-#status.hidden, #status-building.hidden, #status-error.hidden {
+#status.hidden, #status-building.hidden, #status-error.hidden, #cache-progress.hidden {
   display: none;
 }
 
@@ -171,6 +171,44 @@ html, body {
   color: #777;
   font-size: 12px;
   min-height: 24px;
+}
+
+#cache-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+}
+
+.progress-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #bbb;
+  white-space: nowrap;
+}
+
+.progress-track {
+  flex: 1;
+  height: 6px;
+  border-radius: 9999px;
+  background: #333;
+  overflow: hidden;
+}
+
+.progress-indicator {
+  height: 100%;
+  border-radius: 9999px;
+  background: #4fc3f7;
+  width: 0%;
+  transition: width 300ms ease;
+}
+
+.progress-value {
+  font-size: 12px;
+  color: #777;
+  font-variant-numeric: tabular-nums;
+  min-width: 4ch;
+  text-align: right;
 }
 
 #viewer-host {

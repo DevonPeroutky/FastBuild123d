@@ -22,7 +22,14 @@
           <pre id="error-traceback"></pre>
         </details>
       </div>
-      <div id="stats"></div>
+      <div id="stats">
+        <div id="cache-progress" class="hidden">
+          <span class="progress-label">Cache Hit Rate</span>
+          <div class="progress-track"><div id="cache-progress-bar" class="progress-indicator"></div></div>
+          <span id="cache-progress-value" class="progress-value">0%</span>
+        </div>
+        <div id="stats-line"></div>
+      </div>
     </aside>
     <main id="viewer-host">
       <div id="cad_view"></div>

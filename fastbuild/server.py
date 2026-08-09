@@ -2,10 +2,12 @@
 
 import asyncio
 import contextlib
+import functools
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -14,8 +16,9 @@ from watchfiles import awatch
 
 from fastbuild.builder import BuildFailure, BuildOutput, build_part
 from fastbuild.buildloop import BuildQueue, BuildRequest, TrailingDebounce
+from fastbuild.cache.store import FrozenStats, Store, build_outcome
 from fastbuild.errors import Error
-from fastbuild.harness import load_model
+from fastbuild.harness import LoadedModel, install_cache, load_model
 from fastbuild.protocol import (
     BuildError,
     BuildOk,
@@ -36,11 +39,35 @@ from fastbuild.session import (
     select_part,
     set_value,
 )
-from fastbuild.statelog import format_transition
+from fastbuild.statelog import HEADER_WIDTH, format_transition
 
 log = logging.getLogger("fastbuild")
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+
+def cache_summary(
+    before: FrozenStats, after: FrozenStats, stages: int | None
+) -> Mapping[str, Any]:
+    """The BuildOk.cache payload: cumulative counts, plus this build's hit rate.
+
+    `stages` is the selected part's call-closure size (the cold-build lookup
+    count); `rebuilt` is this build's recomputed calls. Clamped because loops
+    can legitimately push `rebuilt` past `stages`.
+    """
+    rebuilt = (after.misses - before.misses) + (after.bypasses - before.bypasses)
+    hit_rate = (
+        max(0.0, min(1.0, (stages - rebuilt) / stages)) if stages else None
+    )
+    return {
+        "hits": after.hits,
+        "misses": after.misses,
+        "entries": after.entries,
+        "last": build_outcome(before, after),
+        "stages": stages,
+        "rebuilt": rebuilt,
+        "hit_rate": hit_rate,
+    }
 
 
 class ViewerServer:
@@ -62,21 +89,36 @@ class ViewerServer:
         self.clients: set[WebSocket] = set()
         self.queue = BuildQueue(self._run_build)
         self.drag = TrailingDebounce(drag_debounce_s, self.submit_selected)
+        self.store = Store()
         self._stop = asyncio.Event()
         self._watcher: asyncio.Task | None = None
+        # One worker for builds AND reloads: OCCT is the thread-unsafe shared
+        # resource, and a single thread serializes it while making the store
+        # single-mutator by construction (SPEC-caching §3 Store).
+        self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="fastbuild")
+
+    async def _in_worker(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self._worker, functools.partial(fn, *args, **kwargs))
 
     def _set_state(self, action: str, new_state: SessionState) -> None:
         if self.debug:
             log.debug("%s", format_transition(action, self.state, new_state))
         self.state = new_state
 
+    async def _load_installed(self) -> LoadedModel | Error:
+        loaded = await self._in_worker(load_model, self.model_path)
+        if isinstance(loaded, Error):
+            return loaded
+        return install_cache(loaded, self.store, debug=self.debug)
+
     async def startup(self, watch: bool) -> None:
-        loaded = await asyncio.to_thread(load_model, self.model_path)
+        loaded = await self._load_installed()
         if isinstance(loaded, Error):
             self.load_error = loaded.message
             self.last_status = BuildError(error=loaded.message)
         else:
-            self._set_state("startup", initial_state(loaded.app))
+            self._set_state("startup", initial_state(loaded.parts))
             self.submit_selected()
         if watch:
             self._watcher = asyncio.get_running_loop().create_task(self._watch())
@@ -88,6 +130,7 @@ class ViewerServer:
             self._watcher.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await self._watcher
+        self._worker.shutdown(wait=False, cancel_futures=True)
 
     def submit_selected(self) -> None:
         if self.state is None:
@@ -102,19 +145,29 @@ class ViewerServer:
             return
         part_def = self.state.parts[request.part]
         await self.broadcast(Building())
-        result = await asyncio.to_thread(build_part, part_def, request.values)
+        before = self.store.stats()
+        if self.debug:
+            log.debug("%s", "\n" + f"── build {request.part} ".ljust(HEADER_WIDTH, "─"))
+        result = await self._in_worker(build_part, part_def, request.values, store=self.store)
         match result:
             case BuildOutput(part=part, shapes=shapes, timings=timings):
                 self.last_good[part] = shapes
                 await self.broadcast(ModelUpdate(part=part, shapes=shapes))
-                self.last_status = BuildOk(timings=timings)
+                self.last_status = BuildOk(
+                    timings=timings,
+                    cache=cache_summary(
+                        before,
+                        self.store.stats(),
+                        getattr(part_def.fn, "stage_count", None),
+                    ),
+                )
                 await self.broadcast(self.last_status)
             case BuildFailure(traceback=tb):
                 self.last_status = BuildError(error=tb)
                 await self.broadcast(self.last_status)
 
     async def reload(self) -> None:
-        loaded = await asyncio.to_thread(load_model, self.model_path)
+        loaded = await self._load_installed()
         if isinstance(loaded, Error):
             self.last_status = BuildError(error=loaded.message)
             await self.broadcast(self.last_status)
@@ -122,9 +175,9 @@ class ViewerServer:
         self.load_error = None
         self._set_state(
             "reload",
-            initial_state(loaded.app)
+            initial_state(loaded.parts)
             if self.state is None
-            else migrate(self.state, loaded.app),
+            else migrate(self.state, loaded.parts),
         )
         await self.broadcast(init_message(self.state))
         self.submit_selected()

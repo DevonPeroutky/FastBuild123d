@@ -11,6 +11,8 @@ from typing import Any, Mapping, Union
 
 from ocp_tessellate.convert import numpy_to_buffer_json, tessellate_group, to_ocpgroup
 
+from fastbuild.cache.keys import CacheKey
+from fastbuild.cache.store import Store
 from fastbuild.params import to_python
 from fastbuild.registry import PartDef
 
@@ -37,13 +39,37 @@ def tessellate_to_json(obj: Any, name: str) -> Mapping[str, Any]:
     return numpy_to_buffer_json({"instances": instance_meshes, "shapes": shapes})
 
 
-def build_part(part_def: PartDef, values: Mapping[str, Any]) -> BuildResult:
-    """Actually build the part and return the result"""
+def _mesh_key(part_def: PartDef, call_args: Mapping[str, Any]) -> CacheKey | None:
+    """The part function's *call* key, computable before the build runs — a
+    revisit that still paid the build could never land inside the §2.2 budget.
+    None when the entry point is unwrapped (no store installed) or unkeyable.
+    """
+    key_fn = getattr(part_def.fn, "call_key", None)
+    if key_fn is None:
+        return None
+    key = key_fn(call_args)
+    return key if isinstance(key, CacheKey) else None
+
+
+def build_part(
+    part_def: PartDef, values: Mapping[str, Any], store: Store | None = None
+) -> BuildResult:
+    """Build the part and return the result. `store` is the viewer server's
+    cache; None (CLI, tests, bench) means no mesh caching."""
     call_args = {
         spec.name: to_python(spec, values[spec.name])
         for spec in part_def.params
         if spec.name in values
     }
+    key = _mesh_key(part_def, call_args) if store is not None else None
+    if store is not None and key is not None:
+        mesh = store.get_mesh(key)
+        if mesh is not None:
+            return BuildOutput(
+                part=part_def.name,
+                shapes=mesh,
+                timings={"build_ms": 0.0, "tessellate_ms": 0.0},
+            )
     start = perf_counter()
     try:
         result = part_def.fn(**call_args)
@@ -55,6 +81,8 @@ def build_part(part_def: PartDef, values: Mapping[str, Any]) -> BuildResult:
     except Exception:
         return BuildFailure(part=part_def.name, traceback=traceback.format_exc())
     done = perf_counter()
+    if store is not None and key is not None:
+        store.put_mesh(key, shapes)
     return BuildOutput(
         part=part_def.name,
         shapes=shapes,

@@ -12,7 +12,7 @@ from typing import Mapping
 from fastbuild.errors import Error
 from fastbuild.params import JsonValue, coerce, default_value, schema
 from fastbuild.protocol import Init, PartSchema
-from fastbuild.registry import App, PartDef
+from fastbuild.registry import PartDef
 
 Values = Mapping[str, JsonValue]
 
@@ -28,8 +28,7 @@ def _frozen(values: dict[str, dict[str, JsonValue]]) -> Mapping[str, Values]:
     return MappingProxyType({k: MappingProxyType(dict(v)) for k, v in values.items()})
 
 
-def initial_state(app: App) -> SessionState:
-    parts = app.parts
+def initial_state(parts: Mapping[str, PartDef]) -> SessionState:
     values = {
         name: {spec.name: default_value(spec) for spec in part.params}
         for name, part in parts.items()
@@ -62,10 +61,10 @@ def select_part(state: SessionState, part: str) -> SessionState | Error:
     return replace(state, selected=part)
 
 
-def migrate(state: SessionState, new_app: App) -> SessionState:
+def migrate(state: SessionState, new_parts: Mapping[str, PartDef]) -> SessionState:
     """After a file save: params that survive keep their current values (when
     they still coerce), new params start at defaults, removed ones drop."""
-    fresh = initial_state(new_app)
+    fresh = initial_state(new_parts)
     values = {}
     for name, part in fresh.parts.items():
         merged = dict(fresh.values[name])
