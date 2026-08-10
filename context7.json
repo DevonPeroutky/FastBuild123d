@@ -1,0 +1,22 @@
+{
+  "$schema": "https://context7.com/schema/context7.json",
+  "projectTitle": "FastBuild123",
+  "description": "Turn build123d CAD model functions into live, interactive parametric web UIs with the @app.part() decorator; typed signatures become sliders, checkboxes, and dropdowns.",
+  "folders": [],
+  "excludeFolders": ["fastbuild/static", "tests", "scripts", "dist", ".claude"],
+  "excludeFiles": ["CLAUDE.md", "PYTHON_CODE_STANDARDS.md", "uv.lock"],
+  "rules": [
+    "Every @app.part() parameter must have a default value; defaults define the initial build.",
+    "Use Annotated[float, Range(min, max, step, unit)] for sliders; bool for checkboxes; Literal or Enum for dropdowns; bare int/float for number inputs.",
+    "Range requires min < max; exclusive bounds (gt/lt) and one-sided ge/le raise ParamError at decoration time.",
+    "Write parts as compositions of small top-level functions in the same file; only same-file, top-level functions are cached.",
+    "Avoid Builder mode (with BuildPart():) inside cached functions; it bypasses the cache. Prefer algebra mode.",
+    "Impure names (open, random, time, environ, input, import_step, import_svg) in a function body disable caching for it and all its callers.",
+    "Functions reading module-level constants or sibling-module imports can serve stale cache entries; mark them @no_cache.",
+    "@no_cache is contagious: every caller of a no_cache function also runs uncached.",
+    "Label every child solid and return a flat Compound(children=[...]) so the mesh cache can hit.",
+    "fastbuild export validates --param values strictly against Range; out-of-range values error rather than clamp.",
+    "Run 'fastbuild agent-docs' for the full agent skill doc, or 'fastbuild view --debug' to trace cache HIT/MISS/BYPASS.",
+    "Requires Python 3.10-3.13; ~500 MB install; Alpine/musl unsupported."
+  ]
+}
