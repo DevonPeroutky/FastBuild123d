@@ -1,6 +1,6 @@
 [project]
 name = "fastbuild123"
-version = "0.1.1"
+version = "0.1.2"
 description = "Turn build123d models into  live, interactive parametric web UI"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -36,9 +36,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/devonperoutky/FastBuild123"
-Repository = "https://github.com/devonperoutky/FastBuild123"
-Issues = "https://github.com/devonperoutky/FastBuild123/issues"
+Homepage = "https://github.com/DevonPeroutky/FastBuild123d"
+Repository = "https://github.com/DevonPeroutky/FastBuild123d"
+Issues = "https://github.com/DevonPeroutky/FastBuild123d/issues"
 
 [project.scripts]
 fastbuild = "fastbuild.cli:main"
