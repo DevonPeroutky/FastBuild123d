@@ -1,5 +1,5 @@
-"""CLI: `fastbuild view model.py`, `fastbuild demo enclosure`, and
-`fastbuild export model.py part -o out.step`."""
+"""CLI: `fastbuild view model.py`, `fastbuild demo enclosure`,
+`fastbuild export model.py part -o out.step`, and `fastbuild agent-docs`."""
 
 import argparse
 import json
@@ -7,6 +7,7 @@ import logging
 import sys
 import threading
 import webbrowser
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -16,6 +17,23 @@ from fastbuild.params import to_python, validate_bounds
 from fastbuild.registry import PartDef
 
 EXAMPLES_DIR = Path(__file__).parent / "examples"
+SKILL_PATH = Path(__file__).parent / "SKILL.md"
+
+SKILL_INSTALL_TARGETS: tuple[Path, ...] = (
+    Path(".claude/skills/fastbuild123/SKILL.md"),
+    Path(".agents/skills/fastbuild123/SKILL.md"),
+)
+
+
+@dataclass(frozen=True)
+class WriteFile:
+    path: Path
+    content: str
+
+
+def plan_skill_install(root: Path, skill_text: str) -> tuple[WriteFile, ...]:
+    """Describe the writes that install the skill doc under a project root."""
+    return tuple(WriteFile(root / rel, skill_text) for rel in SKILL_INSTALL_TARGETS)
 
 
 def example_names() -> list[str]:
@@ -120,6 +138,17 @@ def _cmd_export(args: argparse.Namespace) -> None:
     print(f"exported {args.part} -> {out}")
 
 
+def _cmd_agent_docs(args: argparse.Namespace) -> None:
+    skill_text = SKILL_PATH.read_text()
+    if not args.install:
+        print(skill_text)
+        return
+    for action in plan_skill_install(Path.cwd(), skill_text):
+        action.path.parent.mkdir(parents=True, exist_ok=True)
+        action.path.write_text(action.content)
+        print(f"wrote {action.path}")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fastbuild")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -151,6 +180,18 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--param", action="append", default=[], metavar="name=value")
     export.add_argument("-o", "--output", required=True)
     export.set_defaults(func=_cmd_export)
+
+    agent = sub.add_parser(
+        "agent-docs",
+        help="print the AI coding agent skill doc (SKILL.md) for this library",
+    )
+    agent.add_argument(
+        "--install",
+        action="store_true",
+        help="write it into ./.claude/skills/fastbuild123/ and "
+        "./.agents/skills/fastbuild123/ (overwrites; run from your project root)",
+    )
+    agent.set_defaults(func=_cmd_agent_docs)
 
     return parser
 

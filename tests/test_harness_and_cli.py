@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from fastbuild.cli import main, resolve_export_values
+from fastbuild.cli import SKILL_PATH, main, plan_skill_install, resolve_export_values
 from fastbuild.errors import Error
 from fastbuild.harness import LoadedModel, function_source_hashes, load_model
 
@@ -116,3 +116,56 @@ def test_export_cli_writes_stl(model_file, tmp_path, capsys):
 def test_export_cli_rejects_unknown_part(model_file, tmp_path):
     with pytest.raises(SystemExit):
         main(["export", str(model_file), "nope", "-o", str(tmp_path / "x.stl")])
+
+
+def test_agent_docs_prints_skill_with_frontmatter(capsys):
+    main(["agent-docs"])
+    out = capsys.readouterr().out
+    assert out.startswith("---")
+    assert "name: fastbuild123" in out
+    assert "@app.part()" in out
+
+
+def test_agent_docs_install_writes_both_targets(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    main(["agent-docs", "--install"])
+    packaged = SKILL_PATH.read_text()
+    for rel in (
+        ".claude/skills/fastbuild123/SKILL.md",
+        ".agents/skills/fastbuild123/SKILL.md",
+    ):
+        assert (tmp_path / rel).read_text() == packaged
+
+
+def test_agent_docs_install_overwrites_existing(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    target = tmp_path / ".claude/skills/fastbuild123/SKILL.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("stale")
+    main(["agent-docs", "--install"])
+    assert target.read_text() == SKILL_PATH.read_text()
+
+
+def test_plan_skill_install_is_pure_and_relative_to_root():
+    writes = plan_skill_install(Path("/proj"), "content")
+    assert [w.path for w in writes] == [
+        Path("/proj/.claude/skills/fastbuild123/SKILL.md"),
+        Path("/proj/.agents/skills/fastbuild123/SKILL.md"),
+    ]
+    assert all(w.content == "content" for w in writes)
+
+
+def test_skill_doc_ships_inside_the_package():
+    assert SKILL_PATH.exists()
+    lines = SKILL_PATH.read_text().splitlines()
+    assert lines[0] == "---"
+    closing = lines[1:].index("---") + 1
+    frontmatter = lines[1:closing]
+    assert any(line.startswith("description:") for line in frontmatter)
+
+
+def test_param_error_importable_from_package_root():
+    import fastbuild
+    from fastbuild.params import ParamError
+
+    assert fastbuild.ParamError is ParamError

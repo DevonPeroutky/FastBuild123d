@@ -27,6 +27,12 @@ JsonValue = Union[int, float, str, bool]
 
 @dataclass(frozen=True)
 class Range:
+    """Slider bounds for a numeric parameter, used inside `Annotated[...]`.
+
+    Requires min < max. `step=None` defaults to 1 for int parameters and
+    (max - min) / 100 for float. `unit` is a display-only suffix.
+    """
+
     min: float
     max: float
     step: float | None = None
@@ -46,6 +52,8 @@ class ParamError(Exception):
 
 @dataclass(frozen=True)
 class Slider:
+    """A bounded numeric parameter; values are clamped and snapped to the step grid."""
+
     name: str
     min: float
     max: float
@@ -58,6 +66,8 @@ class Slider:
 
 @dataclass(frozen=True)
 class NumberInput:
+    """An unbounded numeric parameter rendered as a free-form number field."""
+
     name: str
     integer: bool
     default: JsonValue
@@ -67,6 +77,8 @@ class NumberInput:
 
 @dataclass(frozen=True)
 class Checkbox:
+    """A bool parameter."""
+
     name: str
     default: bool
     group: str | None = None
@@ -74,6 +86,8 @@ class Checkbox:
 
 @dataclass(frozen=True)
 class Dropdown:
+    """A Literal or Enum parameter; Enum options are keyed by member name."""
+
     name: str
     options: tuple[JsonValue, ...]
     default: JsonValue
@@ -83,6 +97,8 @@ class Dropdown:
 
 @dataclass(frozen=True)
 class Unsupported:
+    """A parameter whose type has no widget; shown read-only, always passed its default."""
+
     name: str
     default_repr: str
     group: str | None = None

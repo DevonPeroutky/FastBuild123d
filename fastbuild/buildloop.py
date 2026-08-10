@@ -60,7 +60,7 @@ class TrailingDebounce:
             )
 
     def flush(self) -> None:
-        """User released the slider. Immediatly close window and call action"""
+        """User released the slider. Immediately close window and call action"""
         self.cancel()
         self._action()
 

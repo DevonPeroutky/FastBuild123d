@@ -60,6 +60,20 @@ fastbuild export my_model.py enclosure --param width=120 -o enclosure.step
 Values are validated against each parameter's `Range`; output format follows the
 extension (`.step`/`.stp`/`.stl`).
 
+## AI coding agents
+
+FastBuild123 ships its own agent skill doc — API rules plus caching best practices
+in the [Agent Skills](https://agentskills.io) format. Install it into your project
+so Claude Code, Codex, Cursor, and friends pick it up automatically:
+
+```bash
+fastbuild agent-docs --install   # writes .claude/skills/fastbuild123/ and .agents/skills/fastbuild123/
+```
+
+Re-run after upgrading the package; plain `fastbuild agent-docs` prints the doc to
+stdout instead. The library is also indexed on [Context7](https://context7.com)
+(configured via `context7.json`) for agents using the Context7 MCP server.
+
 ## Requirements
 
 Python 3.10–3.13 on macOS (Apple Silicon or Intel), Linux (glibc 2.31+, x86-64 or

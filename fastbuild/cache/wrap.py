@@ -14,7 +14,7 @@ import functools
 import inspect
 import logging
 from time import perf_counter
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, TypeVar
 
 from build123d.build_common import Builder
 
@@ -34,8 +34,10 @@ log = logging.getLogger("fastbuild")
 
 NO_KEY = "-" * 10
 
+F = TypeVar("F", bound=Callable[..., Any])
 
-def no_cache(fn: Callable[..., Any]) -> Callable[..., Any]:
+
+def no_cache(fn: F) -> F:
     """Opt a model-file function out of caching. Contagious: every caller of a
     `no_cache` function runs uncached too (a caller's hit would skip it)."""
     fn._fb_no_cache = True  # type: ignore[attr-defined]

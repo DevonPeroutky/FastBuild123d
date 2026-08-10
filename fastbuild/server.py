@@ -269,6 +269,14 @@ def create_app(
     watch_debounce_ms: int = 100,
     debug: bool = False,
 ) -> FastAPI:
+    """Build the FastAPI app serving the live viewer for one model file.
+
+    The supported embedding seam for running FastBuild123 under your own
+    ASGI server. `watch` reloads the model on file save; `drag_debounce_s`
+    trails slider drags before rebuilding; `watch_debounce_ms` coalesces
+    file-save events; `debug` logs state transitions and a per-call cache
+    HIT/MISS/BYPASS trace.
+    """
     server = ViewerServer(
         model_path,
         drag_debounce_s=drag_debounce_s,
