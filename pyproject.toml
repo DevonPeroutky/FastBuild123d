@@ -45,7 +45,7 @@ fastbuild = "fastbuild.cli:main"
 fastbuild123 = "fastbuild.cli:main"
 
 [dependency-groups]
-dev = ["httpx>=0.27", "pytest>=8", "pytest-asyncio>=0.24"]
+dev = ["httpx>=0.27", "poethepoet>=0.29", "pytest>=8", "pytest-asyncio>=0.24"]
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -66,3 +66,7 @@ explicit = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.poe.tasks.release]
+help = "Build fresh artifacts and publish to PyPI (requires PYPI_TOKEN)"
+shell = ": ${PYPI_TOKEN:?PYPI_TOKEN is not set} && rm -rf dist && uv build && uv publish --token $PYPI_TOKEN"
