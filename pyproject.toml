@@ -1,35 +1,67 @@
 [project]
 name = "fastbuild123"
 version = "0.1.0"
-description = "Turn any build123d model into a live, interactive parametric web UI"
+description = "Turn build123d models into  live, interactive parametric web UI"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-    "annotated-types>=0.6",
-    "build123d>=0.8.0",
-    "fastapi>=0.115",
-    "ocp-tessellate>=3.4",
-    "pydantic>=2",
-    "uvicorn[standard]>=0.30",
-    "watchfiles>=1.1.1",
+license = "MIT"
+license-files = ["LICENSE", "fastbuild/static/vendor/LICENSE-three-cad-viewer"]
+authors = [{ name = "Devon Peroutky", email = "devonperoutky@gmail.com" }]
+keywords = ["cad", "build123d", "parametric", "opencascade", "3d", "modeling"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Web Environment",
+  "Framework :: FastAPI",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Manufacturing",
+  "Operating System :: MacOS",
+  "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Multimedia :: Graphics :: 3D Modeling",
+  "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
 ]
+dependencies = [
+  "annotated-types>=0.6",
+  "build123d>=0.8.0",
+  "fastapi>=0.115",
+  "ocp-tessellate>=3.4",
+  "pydantic>=2",
+  "uvicorn[standard]>=0.30",
+  "watchfiles>=1.1.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/devonperoutky/FastBuild123"
+Repository = "https://github.com/devonperoutky/FastBuild123"
+Issues = "https://github.com/devonperoutky/FastBuild123/issues"
 
 [project.scripts]
 fastbuild = "fastbuild.cli:main"
+fastbuild123 = "fastbuild.cli:main"
 
 [dependency-groups]
-dev = [
-    "httpx>=0.27",
-    "pytest>=8",
-    "pytest-asyncio>=0.24",
-]
+dev = ["httpx>=0.27", "pytest>=8", "pytest-asyncio>=0.24"]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["fastbuild"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.claude", "/CLAUDE.md", "/PYTHON_CODE_STANDARDS.md", "/specs"]
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

@@ -7,9 +7,17 @@ parametric web UI. Annotate your part function's parameters with a FastAPI-style
 
 ## Quick start
 
+Run a bundled example without installing anything:
+
 ```bash
-uv sync
-uv run fastbuild view examples/enclosure.py
+uvx fastbuild123 demo enclosure
+```
+
+Or install it into your own project:
+
+```bash
+uv add fastbuild123      # or: pip install fastbuild123
+fastbuild view my_model.py
 ```
 
 A browser page opens with parameter controls on the left and a live 3D view on the
@@ -46,20 +54,35 @@ a named collapsible section in the panel; ungrouped parameters render first.
 ## Headless export
 
 ```bash
-uv run fastbuild export examples/enclosure.py enclosure --param width=120 -o enclosure.step
+fastbuild export my_model.py enclosure --param width=120 -o enclosure.step
 ```
 
 Values are validated against each parameter's `Range`; output format follows the
 extension (`.step`/`.stp`/`.stl`).
 
+## Requirements
+
+Python 3.10–3.13 on macOS (Apple Silicon or Intel), Linux (glibc 2.31+, x86-64 or
+aarch64), or 64-bit Windows — wherever `cadquery-ocp` publishes wheels. Expect a
+~500 MB install; the OpenCASCADE kernel is most of it. Alpine/musl is not supported.
+
 ## Development
 
 ```bash
+uv sync
 uv run pytest
+uv run fastbuild demo enclosure
 ```
 
-Specs live in `specs/`. The 3D component is a vendored, pinned build of
+Examples live in `fastbuild/examples/` so they ship with the package and stay
+runnable via `fastbuild demo`. Specs live in `specs/`. The 3D component is a
+vendored, pinned build of
 [three-cad-viewer](https://github.com/bernhard-42/three-cad-viewer)
 (`fastbuild/static/vendor/`, see `VERSION` there) fed by
 [ocp-tessellate](https://github.com/bernhard-42/ocp-tessellate) output over a
 versioned websocket protocol.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Bundles three-cad-viewer (MIT), whose license is
+included at `fastbuild/static/vendor/LICENSE-three-cad-viewer`.

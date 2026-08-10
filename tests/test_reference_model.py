@@ -10,7 +10,7 @@ from fastbuild.builder import BuildOutput, build_part
 from fastbuild.harness import LoadedModel, load_model
 from fastbuild.params import default_value
 
-MODEL = Path(__file__).resolve().parents[1] / "examples" / "finned_enclosure.py"
+MODEL = Path(__file__).resolve().parents[1] / "fastbuild" / "examples" / "finned_enclosure.py"
 
 STAGES = {
     "finned_profile",

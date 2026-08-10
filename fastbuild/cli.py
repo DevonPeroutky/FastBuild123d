@@ -1,4 +1,5 @@
-"""CLI: `fastbuild view model.py` and `fastbuild export model.py part -o out.step`."""
+"""CLI: `fastbuild view model.py`, `fastbuild demo enclosure`, and
+`fastbuild export model.py part -o out.step`."""
 
 import argparse
 import json
@@ -13,6 +14,12 @@ from fastbuild.errors import Error
 from fastbuild.harness import LoadedModel, load_model
 from fastbuild.params import to_python, validate_bounds
 from fastbuild.registry import PartDef
+
+EXAMPLES_DIR = Path(__file__).parent / "examples"
+
+
+def example_names() -> list[str]:
+    return sorted(path.stem for path in EXAMPLES_DIR.glob("*.py"))
 
 
 def _parse_param_arg(arg: str) -> tuple[str, Any] | Error:
@@ -62,12 +69,11 @@ def _enable_debug_logging() -> None:
     logger.setLevel(logging.DEBUG)
 
 
-def _cmd_view(args: argparse.Namespace) -> None:
+def _serve(path: Path, args: argparse.Namespace) -> None:
     import uvicorn
 
     from fastbuild.server import create_app
 
-    path = Path(args.file).resolve()
     _load_or_exit(path)
     if args.debug:
         _enable_debug_logging()
@@ -77,6 +83,14 @@ def _cmd_view(args: argparse.Namespace) -> None:
         threading.Timer(0.8, webbrowser.open, args=[url]).start()
     print(f"fastbuild: serving {path.name} at {url}")
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning")
+
+
+def _cmd_view(args: argparse.Namespace) -> None:
+    _serve(Path(args.file).resolve(), args)
+
+
+def _cmd_demo(args: argparse.Namespace) -> None:
+    _serve(EXAMPLES_DIR / f"{args.name}.py", args)
 
 
 def _cmd_export(args: argparse.Namespace) -> None:
@@ -110,16 +124,26 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="fastbuild")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    view = sub.add_parser("view", help="serve a model file with a live parametric UI")
-    view.add_argument("file")
-    view.add_argument("--port", type=int, default=8123)
-    view.add_argument("--no-open", action="store_true")
-    view.add_argument(
+    serving = argparse.ArgumentParser(add_help=False)
+    serving.add_argument("--port", type=int, default=8123)
+    serving.add_argument("--no-open", action="store_true")
+    serving.add_argument(
         "--debug",
         action="store_true",
         help="log every session state transition (action, diff, prev/next state)",
     )
+
+    view = sub.add_parser(
+        "view", parents=[serving], help="serve a model file with a live parametric UI"
+    )
+    view.add_argument("file")
     view.set_defaults(func=_cmd_view)
+
+    demo = sub.add_parser(
+        "demo", parents=[serving], help="serve a bundled example model"
+    )
+    demo.add_argument("name", choices=example_names())
+    demo.set_defaults(func=_cmd_demo)
 
     export = sub.add_parser("export", help="build a part headless and write STEP/STL")
     export.add_argument("file")

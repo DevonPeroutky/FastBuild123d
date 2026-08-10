@@ -10,7 +10,7 @@ per-node protocol message. None of that is needed: `ocp_tessellate` already
 memoizes per instance and takes the cache key as a **parameter**. We supply
 provenance digests instead of letting it hash geometry. §7 records the reversal.
 
-Numbers are measured against `examples/finned_enclosure.py` on an M-series
+Numbers are measured against `fastbuild/examples/finned_enclosure.py` on an M-series
 12-core machine, consistent with the Phase 0 baseline.
 
 ## 1. Goal

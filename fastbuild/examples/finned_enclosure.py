@@ -4,7 +4,7 @@ A finned, vented instrument enclosure that takes seconds to build, written as a
 composition of small functions instead of one fused chain — so a slider feeding
 only one stage can, once caching lands, skip the others.
 
-Run `python scripts/bench_model.py examples/finned_enclosure.py` for the
+Run `python scripts/bench_model.py fastbuild/examples/finned_enclosure.py` for the
 per-stage cost of the current defaults.
 """
 

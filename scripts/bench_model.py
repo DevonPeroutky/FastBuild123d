@@ -3,8 +3,8 @@
 SPEC-caching Phase 0: the caching targets are stated against a measured
 reference model, not a guess. Run from the repo root:
 
-    python scripts/bench_model.py examples/finned_enclosure.py
-    python scripts/bench_model.py examples/finned_enclosure.py --sweep
+    python scripts/bench_model.py fastbuild/examples/finned_enclosure.py
+    python scripts/bench_model.py fastbuild/examples/finned_enclosure.py --sweep
 
 Stage times come from temporarily wrapping every function the model file
 defines, so they are inclusive — a stage that calls another contains it.

@@ -77,7 +77,7 @@ Measured against the committed reference model (Phase 0), not hypothetical numbe
 
 ### Phase 0 — Groundwork ✅ (2026-08-08)
 
-**Reference model:** `examples/finned_enclosure.py` — a finned, vented instrument
+**Reference model:** `fastbuild/examples/finned_enclosure.py` — a finned, vented instrument
 enclosure built from seven small functions and assembled as a `Compound` of three
 provenance-friendly children (shell / grille / bosses). `scripts/bench_model.py`
 times the stages by wrapping the model file's own namespace, which is the same
@@ -94,7 +94,7 @@ call-time global-lookup seam Phase 1's wrappers will use. At the defaults
 | `mounting_bosses` | 5 | |
 | **build** | **2950** | |
 | **tessellate** | **1021** | |
-| **total** | **3971** | vs. 51–448ms for `examples/enclosure.py` |
+| **total** | **3971** | vs. 51–448ms for `fastbuild/examples/enclosure.py` |
 
 `bench_model.py --sweep` drives every slider to both ends and exits non-zero on
 any failure; the committed defaults pass it.
@@ -427,7 +427,7 @@ fastbuild/                 # existing package
                            #   (retired; see SPEC-mesh-caching.md §3.5)
   server.py                # existing — owns the store + single-worker executor, fills BuildOk.cache
   static/app.js, app.css   # existing — unchanged (Phase 2 keeps the plain-text footer)
-examples/finned_enclosure.py  # Phase 0 reference model
+fastbuild/examples/finned_enclosure.py  # Phase 0 reference model
 scripts/bench_model.py        # Phase 0 stage/part timing + --sweep extremes check
 ```
 

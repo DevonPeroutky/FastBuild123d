@@ -19,7 +19,7 @@ A local web app: `fastbuild view model.py` opens a browser page with auto-genera
 
 ## 2. Success criteria
 
-1. `fastbuild view examples/enclosure.py` → browser page with sliders derived from the `@part` signature; no per-model UI code.
+1. `fastbuild view fastbuild/examples/enclosure.py` → browser page with sliders derived from the `@part` signature; no per-model UI code.
 2. Slider drag on the reference model (SPEC-caching §2) re-renders within cache-predicted time + ≤150ms UI/transport overhead; previously-seen values render in ≤150ms end-to-end.
 3. Editing the file and saving updates the view without page reload; camera pose, tree state, and clipping planes survive every update.
 4. A model that raises keeps the last-good geometry on screen with a visible error banner + traceback; fixing the file recovers without restart.
