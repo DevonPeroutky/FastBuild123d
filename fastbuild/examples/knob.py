@@ -31,7 +31,7 @@ from build123d import (
     sweep,
 )
 
-from fastbuild import App, Group, Range
+from fastbuild import App, Desc, Group, Range
 
 app = App()
 
@@ -115,16 +115,23 @@ def knob(
     diameter: Annotated[float, Range(20, 60, step=1, unit="mm")] = 32,
     height: Annotated[float, Range(10, 40, step=1, unit="mm")] = 18,
     skirt_height: Annotated[float, Range(4, 20, step=0.5, unit="mm"), Group("Body")] = 8,
-    taper: Annotated[float, Range(0.5, 1.0, step=0.05), Group("Body")] = 0.75,
+    taper: Annotated[
+        float,
+        Range(0.5, 1.0, step=0.05),
+        Group("Body"),
+        Desc("Top diameter as a fraction of the base diameter"),
+    ] = 0.75,
     grip: Annotated[Grip, Group("Grip")] = Grip.RIBBED,
     rib_count: Annotated[int, Range(8, 40), Group("Grip")] = 18,
     rib_dia: Annotated[float, Range(1, 4, step=0.25, unit="mm"), Group("Grip")] = 2,
     bore_dia: Annotated[float, Range(3, 10, step=0.5, unit="mm"), Group("Shaft")] = 6,
-    shaft_clearance: Annotated[float, Group("Shaft")] = 0.1,
-    d_flat: Annotated[bool, Group("Shaft")] = True,
+    shaft_clearance: Annotated[
+        float, Group("Shaft"), Desc("Extra bore radius so the knob slips onto the shaft")
+    ] = 0.1,
+    d_flat: Annotated[bool, Group("Shaft"), Desc("Match a D-shaped potentiometer shaft")] = True,
     cap_height: Annotated[float, Range(2, 8, step=0.5, unit="mm"), Group("Top")] = 4,
     pointer: Annotated[Literal["none", "line", "dot"], Group("Top")] = "line",
-    label: Annotated[str, Group("Top")] = "VOL",
+    label: Annotated[str, Group("Top"), Desc("Text engraved on the cap")] = "VOL",
 ) -> Compound:
     skirt = min(skirt_height, height - 2)
     body = gripped(

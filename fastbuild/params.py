@@ -46,6 +46,13 @@ class Group:
     label: str
 
 
+@dataclass(frozen=True)
+class Desc:
+    """Plain-text description shown as an info tooltip beside the parameter's label."""
+
+    text: str
+
+
 class ParamError(Exception):
     """Raised at decoration time for signatures the UI cannot represent."""
 
@@ -62,6 +69,7 @@ class Slider:
     default: JsonValue
     unit: str | None = None
     group: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,7 @@ class NumberInput:
     default: JsonValue
     unit: str | None = None
     group: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -82,6 +91,7 @@ class Checkbox:
     name: str
     default: bool
     group: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -93,6 +103,7 @@ class Dropdown:
     default: JsonValue
     enum_class: type[enum.Enum] | None = None
     group: str | None = None
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +113,7 @@ class Unsupported:
     name: str
     default_repr: str
     group: str | None = None
+    description: str | None = None
 
 
 ParamSpec = Union[Slider, NumberInput, Checkbox, Dropdown, Unsupported]
@@ -155,19 +167,33 @@ class Unwrapped:
     base: Any
     range: Range | None
     group: str | None
+    description: str | None
+
+
+def _description_from_metadata(name: str, metadata: list[Any]) -> str | None:
+    description = next((m.text for m in metadata if isinstance(m, Desc)), None)
+    if description is not None and not description.strip():
+        raise ParamError(f"parameter '{name}': description must not be empty")
+    return description
 
 
 def _unwrap_annotated(name: str, hint: Any) -> Unwrapped:
     if typing.get_origin(hint) is not Annotated:
-        return Unwrapped(base=hint, range=None, group=None)
+        return Unwrapped(base=hint, range=None, group=None, description=None)
     base, *metadata = typing.get_args(hint)
     group = next((m.label for m in metadata if isinstance(m, Group)), None)
     if group is not None and not group.strip():
         raise ParamError(f"parameter '{name}': Group label must not be empty")
+    description = _description_from_metadata(name, metadata)
     native = [m for m in metadata if isinstance(m, Range)]
     if native:
-        return Unwrapped(base=base, range=native[0], group=group)
-    return Unwrapped(base=base, range=_range_from_metadata(name, metadata), group=group)
+        return Unwrapped(base=base, range=native[0], group=group, description=description)
+    return Unwrapped(
+        base=base,
+        range=_range_from_metadata(name, metadata),
+        group=group,
+        description=description,
+    )
 
 
 def _default_step(base: type, rng: Range) -> float:
@@ -179,17 +205,20 @@ def _default_step(base: type, rng: Range) -> float:
 def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
     unwrapped = _unwrap_annotated(name, hint)
     base, rng, group = unwrapped.base, unwrapped.range, unwrapped.group
+    description = unwrapped.description
 
     if base is bool:
         if not isinstance(default, bool):
             raise ParamError(f"parameter '{name}': default {default!r} is not a bool")
-        return Checkbox(name=name, default=default, group=group)
+        return Checkbox(name=name, default=default, group=group, description=description)
 
     if typing.get_origin(base) is Literal:
         options = typing.get_args(base)
         if default not in options:
             raise ParamError(f"parameter '{name}': default {default!r} not in {options}")
-        return Dropdown(name=name, options=tuple(options), default=default, group=group)
+        return Dropdown(
+            name=name, options=tuple(options), default=default, group=group, description=description
+        )
 
     if isinstance(base, type) and issubclass(base, enum.Enum):
         if not isinstance(default, base):
@@ -200,6 +229,7 @@ def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
             default=default.name,
             enum_class=base,
             group=group,
+            description=description,
         )
 
     if base in (int, float):
@@ -207,7 +237,9 @@ def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
             raise ParamError(f"parameter '{name}': default {default!r} is not a number")
         integer = base is int
         if rng is None:
-            return NumberInput(name=name, integer=integer, default=default, group=group)
+            return NumberInput(
+                name=name, integer=integer, default=default, group=group, description=description
+            )
         if not rng.min < rng.max:
             raise ParamError(f"parameter '{name}': Range min {rng.min} must be < max {rng.max}")
         step = rng.step if rng.step is not None else _default_step(base, rng)
@@ -222,9 +254,12 @@ def _spec_for(name: str, hint: Any, default: Any) -> ParamSpec:
             default=default,
             unit=rng.unit,
             group=group,
+            description=description,
         )
 
-    return Unsupported(name=name, default_repr=repr(default), group=group)
+    return Unsupported(
+        name=name, default_repr=repr(default), group=group, description=description
+    )
 
 
 def panel_order(specs: tuple[ParamSpec, ...]) -> tuple[ParamSpec, ...]:
@@ -330,6 +365,7 @@ def schema(spec: ParamSpec, value: JsonValue) -> dict[str, Any]:
         "name": spec.name,
         "kind": None,
         "group": spec.group,
+        "description": spec.description,
         "min": None,
         "max": None,
         "step": None,

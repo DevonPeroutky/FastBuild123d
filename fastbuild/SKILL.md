@@ -62,6 +62,10 @@ Rules:
   collapsible section: `Annotated[float, Range(0, 10), Group("Fins")] = 3`.
   Ungrouped parameters render first in signature order; groups follow in order of
   first appearance, each group's members contiguous.
+- Add `Desc("...")` inside `Annotated[...]` to show an info icon beside the
+  parameter's label that reveals the description as a tooltip on hover:
+  `Annotated[bool, Desc("Match a D-shaped shaft")] = True`. Keep it to a sentence —
+  long text covers the widgets below it while hovered.
 
 ## Decoration-time errors
 
@@ -75,6 +79,7 @@ not at build time — for signatures the UI cannot represent:
 - A default that doesn't match the annotation (wrong type, or not among the
   `Literal`/`Enum` options).
 - A blank `Group("")` label.
+- A blank `Desc("")` description.
 - Two `@app.part()` functions with the same name.
 
 ## Writing cache-friendly parts

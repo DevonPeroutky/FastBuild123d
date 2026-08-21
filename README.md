@@ -30,14 +30,14 @@ geometry on screen with an error banner; fix the file and it recovers.
 ```python
 from typing import Annotated, Literal
 from build123d import Part, Box
-from fastbuild import App, Group, Range
+from fastbuild import App, Desc, Group, Range
 
 app = App()
 
 @app.part()
 def enclosure(
     width:  Annotated[float, Range(20, 200, step=1, unit="mm")] = 80,
-    wall:   Annotated[float, Range(0.8, 5, step=0.1, unit="mm")] = 2,
+    wall:   Annotated[float, Range(0.8, 5, step=0.1, unit="mm"), Desc("Shell thickness")] = 2,
     ribs:   Annotated[int, Range(0, 8), Group("Ribs")] = 4,
     vented: bool = False,
     style:  Literal["rounded", "chamfered"] = "rounded",
@@ -50,6 +50,8 @@ Widget mapping: `float`/`int` + `Range` → slider, bare numbers → number inpu
 defaults are the initial build. Multiple `@app.part()` functions in one file get a
 part selector. Add `Group("Label")` to a parameter's annotation to place it under
 a named collapsible section in the panel; ungrouped parameters render first.
+Add `Desc("...")` to show an info icon beside the parameter that reveals the
+description as a tooltip on hover.
 
 ## Headless export
 

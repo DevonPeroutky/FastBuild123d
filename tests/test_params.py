@@ -6,6 +6,7 @@ import pytest
 from fastbuild.errors import Error
 from fastbuild.params import (
     Checkbox,
+    Desc,
     Dropdown,
     Group,
     NumberInput,
@@ -103,17 +104,17 @@ def test_coerce_rejects_wrong_types_and_unknown_options():
     assert isinstance(coerce(checkbox, 1), Error)
 
 
-def _every_form_grouped(label: str):
-    """One parameter per annotation form / construction site, all in Group(label),
-    plus one unannotated control."""
+def _every_form_annotated(extra: Group | Desc):
+    """One parameter per annotation form / construction site, all carrying the
+    given metadata, plus one unannotated control."""
 
     def part(
-        slider: Annotated[float, Range(0, 10), Group(label)] = 5,
-        number: Annotated[float, Group(label)] = 1.5,
-        toggle: Annotated[bool, Group(label)] = False,
-        literal: Annotated[Literal["x", "y"], Group(label)] = "x",
-        member: Annotated[Finish, Group(label)] = Finish.RAW,
-        weird: Annotated[dict, Group(label)] = {"a": 1},
+        slider: Annotated[float, Range(0, 10), extra] = 5,
+        number: Annotated[float, extra] = 1.5,
+        toggle: Annotated[bool, extra] = False,
+        literal: Annotated[Literal["x", "y"], extra] = "x",
+        member: Annotated[Finish, extra] = Finish.RAW,
+        weird: Annotated[dict, extra] = {"a": 1},
         plain: float = 2.0,
     ):
         ...
@@ -122,7 +123,7 @@ def _every_form_grouped(label: str):
 
 
 def test_group_label_propagates_through_every_annotation_form():
-    specs = introspect(_every_form_grouped("G"))
+    specs = introspect(_every_form_annotated(Group("G")))
     *grouped, plain = specs
     for spec in grouped:
         assert spec.group == "G"
@@ -131,8 +132,18 @@ def test_group_label_propagates_through_every_annotation_form():
     assert schema(plain, default_value(plain))["group"] is None
 
 
+def test_description_propagates_through_every_annotation_form():
+    specs = introspect(_every_form_annotated(Desc("D")))
+    *described, plain = specs
+    for spec in described:
+        assert spec.description == "D"
+        assert schema(spec, default_value(spec))["description"] == "D"
+    assert plain.description is None
+    assert schema(plain, default_value(plain))["description"] is None
+
+
 def test_schema_emits_the_same_key_set_for_every_variant():
-    specs = introspect(_every_form_grouped("G"))
+    specs = introspect(_every_form_annotated(Group("G")))
     key_sets = {frozenset(schema(spec, default_value(spec))) for spec in specs}
     assert len(key_sets) == 1
 
@@ -144,6 +155,16 @@ def test_empty_or_blank_group_label_is_a_decoration_error():
             ...
 
         with pytest.raises(ParamError, match="Group label"):
+            introspect(part)
+
+
+def test_empty_or_blank_description_is_a_decoration_error():
+    for text in ("", "   "):
+
+        def part(w: Annotated[float, Desc(text)] = 1.0):
+            ...
+
+        with pytest.raises(ParamError, match="description"):
             introspect(part)
 
 

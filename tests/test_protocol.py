@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from typing import Annotated
 
-from fastbuild import App, Group, Range
+from fastbuild import App, Desc, Group, Range
 from fastbuild.errors import Error
 from fastbuild.protocol import (
     BuildError,
@@ -26,7 +26,7 @@ def _box_app() -> App:
     # the panel_order policy (ungrouped first), not just the group key.
     @app.part()
     def box(
-        width: Annotated[float, Range(10, 100, step=1, unit="mm")] = 40,
+        width: Annotated[float, Range(10, 100, step=1, unit="mm"), Desc("Outer width in millimeters")] = 40,
         vented: Annotated[bool, Group("Options")] = False,
         height: float = 30.0,
     ):

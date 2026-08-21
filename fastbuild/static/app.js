@@ -134,17 +134,44 @@ function formatNumber(value) {
   return Number.isInteger(value) ? String(value) : String(Math.round(value * 1000) / 1000);
 }
 
+function paramName(param) {
+  const span = document.createElement("span");
+  span.append(param.unit ? `${param.name} (${param.unit})` : param.name);
+  if (param.description !== null) span.append(infoIcon(param));
+  return span;
+}
+
+function infoIcon(param) {
+  const icon = document.createElement("button");
+  icon.type = "button";
+  icon.className = "info-icon";
+  icon.setAttribute("aria-label", param.description);
+  icon.textContent = "\u24D8";
+  const tip = document.createElement("span");
+  tip.className = "info-tooltip";
+  tip.textContent = param.description;
+  // The tooltip is position: fixed so it can extend past the panel's edge;
+  // anchor it to the icon's right just before CSS :hover/:focus reveals it.
+  const place = () => {
+    const rect = icon.getBoundingClientRect();
+    tip.style.left = `${rect.right + 8}px`;
+    tip.style.top = `${rect.top + rect.height / 2}px`;
+  };
+  icon.addEventListener("mouseenter", place);
+  icon.addEventListener("focus", place);
+  icon.append(tip);
+  return icon;
+}
+
 function sliderWidget(param) {
   const wrap = document.createElement("div");
   wrap.className = "param";
   const label = document.createElement("div");
   label.className = "param-label";
-  const nameSpan = document.createElement("span");
-  nameSpan.textContent = param.unit ? `${param.name} (${param.unit})` : param.name;
   const valueSpan = document.createElement("span");
   valueSpan.className = "value";
   valueSpan.textContent = formatNumber(param.value);
-  label.append(nameSpan, valueSpan);
+  label.append(paramName(param), valueSpan);
 
   const input = document.createElement("input");
   input.type = "range";
@@ -168,7 +195,7 @@ function numberWidget(param) {
   wrap.className = "param";
   const label = document.createElement("div");
   label.className = "param-label";
-  label.textContent = param.unit ? `${param.name} (${param.unit})` : param.name;
+  label.append(paramName(param));
   const input = document.createElement("input");
   input.type = "number";
   input.value = param.value;
@@ -188,9 +215,7 @@ function checkboxWidget(param) {
   input.addEventListener("change", () => {
     sendParam(param.name, input.checked, true);
   });
-  const span = document.createElement("span");
-  span.textContent = param.name;
-  wrap.append(input, span);
+  wrap.append(input, paramName(param));
   return wrap;
 }
 
@@ -199,7 +224,7 @@ function dropdownWidget(param) {
   wrap.className = "param";
   const label = document.createElement("div");
   label.className = "param-label";
-  label.textContent = param.name;
+  label.append(paramName(param));
   const select = document.createElement("select");
   for (const option of param.options) {
     const opt = document.createElement("option");
@@ -220,7 +245,7 @@ function readonlyWidget(param) {
   wrap.className = "param";
   const label = document.createElement("div");
   label.className = "param-label";
-  label.textContent = param.name;
+  label.append(paramName(param));
   const note = document.createElement("div");
   note.className = "readonly-note";
   note.textContent = `${param.value} — unsupported parameter type`;
