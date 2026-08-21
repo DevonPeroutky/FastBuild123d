@@ -79,7 +79,7 @@ html, body {
 .info-tooltip {
   display: none;
   position: fixed;
-  z-index: 10;
+  z-index: 1000;
   transform: translateY(-50%);
   width: max-content;
   max-width: 320px;
