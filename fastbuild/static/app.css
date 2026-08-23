@@ -282,3 +282,12 @@ html, body {
   position: relative;
   overflow: hidden;
 }
+
+/* Every toolbar button stays on screen: narrow canvases wrap the row instead
+   of clipping it (the viewer's own "…" folding is disabled in app.js). The
+   viewer pins the height inline, hence !important. */
+#cad_view .tcv_cad_toolbar {
+  flex-wrap: wrap;
+  height: auto !important;
+  min-height: 38px;
+}

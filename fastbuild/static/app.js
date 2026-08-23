@@ -30,6 +30,7 @@ const state = {
   display: null,
   rendered: false,
   renderedGroupId: null,
+  canvasSize: null,
   collapsedGroups: new Set(),
 };
 
@@ -45,32 +46,80 @@ const renderOptions = {
   normalLen: 0,
 };
 
+const TREE_WIDTH = 240;
+
+// Pixels the viewer's own frame (margins, toolbar rows) adds around the canvas;
+// zero until the Display has built its DOM.
+function viewerChrome() {
+  const frame = el.cadView.querySelector(".tcv_cad_viewer");
+  const canvasBox = el.cadView.querySelector(".tcv_cad_view");
+  if (!frame || !canvasBox) return { width: 0, height: 0 };
+  const margin = getComputedStyle(frame);
+  const outer = frame.getBoundingClientRect();
+  const inner = canvasBox.getBoundingClientRect();
+  return {
+    width: outer.width + parseFloat(margin.marginLeft) + parseFloat(margin.marginRight) - inner.width,
+    height: outer.height + parseFloat(margin.marginTop) + parseFloat(margin.marginBottom) - inner.height,
+  };
+}
+
 function viewerSize() {
-  const w = el.viewerHost.clientWidth;
-  const h = el.viewerHost.clientHeight;
-  return { cadWidth: Math.max(w, 400), height: Math.max(h, 300) };
+  const chrome = viewerChrome();
+  return {
+    cadWidth: Math.max(el.viewerHost.clientWidth - chrome.width, 400),
+    height: Math.max(el.viewerHost.clientHeight - chrome.height, 300),
+  };
+}
+
+function applyViewerSize(size) {
+  const current = state.canvasSize;
+  if (current && current.cadWidth === size.cadWidth && current.height === size.height) return;
+  state.canvasSize = size;
+  state.viewer.resizeCadView(size.cadWidth, TREE_WIDTH, size.height, true);
+}
+
+// Size the canvas to fill the host. Only valid once a model is rendered
+// (resizeCadView touches the rendered camera).
+function fitViewer() {
+  applyViewerSize(viewerSize());
+  // The toolbar wraps to a second row below ~740px, changing the chrome height.
+  applyViewerSize(viewerSize());
 }
 
 function viewerOptions() {
   return { up: "Z", control: "trackball" };
 }
 
-function ensureViewer() {
-  if (state.viewer) return;
+// Display and Viewer each read these directly (Display applies no defaults, so
+// an omitted tool flag hides that toolbar group); hand both the same object.
+function displayOptions() {
   const { cadWidth, height } = viewerSize();
-  state.display = new Display(el.cadView, {
+  return {
     cadWidth,
     height,
+    treeWidth: TREE_WIDTH,
     theme: "dark",
     glass: true,
     tools: true,
     pinning: false,
-  });
-  state.viewer = new Viewer(state.display, viewerOptions(), () => {});
-  window.addEventListener("resize", () => {
-    const { cadWidth: w, height: h } = viewerSize();
-    state.viewer.resizeCadView(w, 240, h, true);
-  });
+    measureTools: true,
+    selectTool: true,
+    explodeTool: true,
+    zscaleTool: false,
+  };
+}
+
+function ensureViewer() {
+  if (state.viewer) return;
+  const options = displayOptions();
+  state.display = new Display(el.cadView, options);
+  // three-cad-viewer 5.0.2 folds toolbar groups behind "…" hover menus whenever
+  // the canvas is narrower than this threshold (render, resize, and mouse-leave
+  // all consult it). Zero keeps the full toolbar visible at every width; the
+  // row wraps instead (app.css).
+  state.display._widthThreshold = () => 0;
+  state.viewer = new Viewer(state.display, { ...options, ...viewerOptions() }, () => {});
+  window.addEventListener("resize", fitViewer);
 }
 
 function collectLeaves(node, out) {
@@ -86,6 +135,7 @@ function fullRender(shapes) {
   const camera = state.rendered ? state.viewer.getCameraLocationSettings() : null;
   if (state.rendered) state.viewer.clear();
   state.viewer.render(shapes, renderOptions, viewerOptions());
+  if (!state.rendered) fitViewer();
   state.rendered = true;
   state.renderedGroupId = shapes.id;
   state.renderedLeaves = collectLeaves(shapes, new Map());

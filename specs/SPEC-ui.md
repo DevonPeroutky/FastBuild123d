@@ -99,7 +99,7 @@ Rules: client never reloads the page; viewer instance is created once and update
 ## 7. Frontend
 
 - **No framework.** One static HTML page, one hand-written JS module for the panel + websocket + status banner, one CSS file. Layout: fixed-width left panel, viewer fills the rest.
-- **`three-cad-viewer` vendored**: exact npm version pinned, built bundle committed under `fastbuild/static/vendor/` (no node toolchain required to install or run fastbuild). Its own toolbar/tree/clipping UI used as-is.
+- **`three-cad-viewer` vendored**: exact npm version pinned, built bundle committed under `fastbuild/static/vendor/` (no node toolchain required to install or run fastbuild). Its own toolbar/tree/clipping UI used as-is, with two host-side adjustments: the toolbar is always shown in full (every button group incl. measure/select tools; the component's width-triggered "…" folding is disabled and the row wraps on narrow canvases instead), and the canvas is sized to the host minus the component's own chrome so nothing is clipped.
 - Reference implementations for the init/update glue: ocp-vscode's standalone viewer page and jupyter-cadquery (both drive the same component).
 - Status banner states: building (subtle spinner, viewer stays interactive), error (red banner, expandable traceback, last-good scene shown), ok (auto-hide; stats line updates).
 
