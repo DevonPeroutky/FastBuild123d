@@ -84,6 +84,11 @@ Re-run after upgrading. Omit `--install` to print the docs.
 Python 3.10–3.13 on macOS, Linux (glibc 2.31+, x86-64 or aarch64), or 64-bit Windows.
 The install is roughly 500 MB, mostly OpenCASCADE. Alpine/musl is not supported.
 
+## Contributing and releases
+
+Use Conventional Commit titles for squash merges. See [automated releases](docs/releases.md)
+for version rules, the local dry run, Trusted Publishing setup, and recovery.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Bundles three-cad-viewer (MIT), whose license is

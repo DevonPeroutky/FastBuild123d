@@ -1,0 +1,145 @@
+name: Test and release
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Serialize main runs through publication. Never interrupt an active release.
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: '0.7.8'
+  PSR_VERSION: '10.7.0'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked
+      - run: uv run --locked python -m pytest
+
+  release:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      released: ${{ steps.version.outputs.released }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Check the tested revision is still main
+        id: head
+        run: |
+          head=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$head" = "$GITHUB_SHA" ]; then
+            echo 'current=true' >> "$GITHUB_OUTPUT"
+            git switch -C main "$GITHUB_SHA"
+          else
+            echo 'Skipping superseded main revision.'
+          fi
+      - name: Calculate, build, validate, commit, and tag locally
+        id: version
+        if: steps.head.outputs.current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: uvx --from "python-semantic-release==$PSR_VERSION" semantic-release version --no-push --no-vcs-release
+      - name: Verify the release tag and save checksums
+        if: steps.version.outputs.released == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          python scripts/release.py verify --tag "$RELEASE_TAG"
+          (cd dist && sha256sum *.whl *.tar.gz > SHA256SUMS)
+      - name: Retain exact distributions before pushing
+        if: steps.version.outputs.released == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-${{ github.run_id }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
+      - name: Push release commit and tag atomically
+        if: steps.version.outputs.released == 'true'
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          # A concurrent main update rejects the entire push, including the tag.
+          git push --atomic origin HEAD:refs/heads/main "refs/tags/$RELEASE_TAG"
+
+  publish:
+    needs: release
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.release.outputs.released == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fastbuild123/
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ needs.release.outputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-${{ github.run_id }}
+          path: dist/
+      - name: Validate retained distributions
+        env:
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          (cd dist && sha256sum --check SHA256SUMS)
+          python scripts/release.py verify --tag "$RELEASE_TAG"
+          # PyPI's upload directory must contain only distributions.
+          rm dist/SHA256SUMS
+      - name: Create or update GitHub release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: |
+          # PSR requires a release branch even when generating notes for a tag.
+          git switch -C main "$RELEASE_TAG"
+          uvx --from "python-semantic-release==$PSR_VERSION" semantic-release changelog --post-to-release-tag "$RELEASE_TAG"
+      - name: Publish retained distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+        with:
+          skip-existing: true
+      - name: Attach the same distributions to GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
+        run: gh release upload "$RELEASE_TAG" dist/*.whl dist/*.tar.gz --clobber
