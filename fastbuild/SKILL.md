@@ -100,7 +100,8 @@ Structure that makes caching work:
   function (`op = make_fin; op(...)`) makes the call target unresolvable and forces
   a bypass.
 - **Pass only encodable arguments** between cached functions: numbers, strings,
-  bools, enums, tuples/lists/dicts of those, or results of other cached calls
+  bools, enums, tuples/lists/dicts of those, frozen dataclasses with encodable
+  fields, or results of other cached calls
   (provenance). build123d value types like `Vector` or `Location` are not encodable —
   such calls simply run uncached.
 - **For mesh-level cache hits, label every child and return a flat `Compound`:**
@@ -119,9 +120,18 @@ Things that disable caching (each cascades to every caller of the function):
   `input`, `import_step`, `import_svg`.
 - `@no_cache` on the function, or `@app.part(cache=False)` on the entry point.
 
-Known staleness hole: module-level constants (`WALL = 3`) and functions imported
-from sibling modules are invisible to invalidation — editing them does not bust the
-cache on reload. Mark functions that read them with `@no_cache`.
+Code edits invalidate every function's cache key. FastBuild snapshots all `.py`
+files beneath the model's directory (or its enclosing Python package), including
+constants, properties, and local helpers, and watches that tree for changes.
+Ordinary local imports are loaded again from the snapshot, including transitive
+imports. Hidden directories, environments, and `node_modules` are excluded.
+Parameter changes still reuse functions whose inputs are unchanged. Reloading
+identical source or reverting an edit can reuse entries still in memory.
+
+Code outside that source tree, dynamic loading via custom loaders or
+`importlib.import_module`, installed dependencies, and external data files are
+outside this automatic reload contract. Restart after editing external code;
+use `@no_cache` for functions reading changing external data.
 
 Also good to know: results faster than ~10 ms aren't stored (rebuilding is cheaper
 than copying), failures are never cached, and the store is in-memory per process

@@ -64,10 +64,9 @@ Measured against the committed reference model (Phase 0), not hypothetical numbe
    §3.5.** The call-key mesh cache is retired — a revisit now rebuilds with all
    geometry hits and all per-instance mesh hits, measured at 47ms, so the
    pre-build short-circuit is no longer worth a second key derivation.
-3. Editing any model-file function's body — including helpers, including code inside
-   comprehensions — always invalidates dependent cache entries (zero stale-geometry
-   cases from *function-body* edits; module-level constants and sibling-module
-   imports are a known deferred hole — §6).
+3. Editing any tracked Python source invalidates every model function's key,
+   including changes to properties, constants, and local imported helpers.
+   Parameter-only changes retain function-level reuse.
 4. A cache hit never returns an object whose later mutation — attribute **or CAD
    structure** — corrupts subsequent hits. This is a **store-side** guarantee; its
    mirror (the provenance tag on the handed-out copy surviving in-place mutation)
@@ -194,6 +193,12 @@ def encode_arg(obj: object) -> Encoded | Error
   is the slider layer's job.
 - Composite: tuple/list/dict of the above — **dict keys sorted, containers
   type-tagged** so `[1,2]` and `(1,2)` cannot collide.
+- Frozen dataclass instances: composite tagged with the class module and qualified
+  name, containing each declared field name and recursively encoded value in field
+  order. Includes inherited fields and fields with `compare=False` or `init=False`;
+  excludes properties, `ClassVar`, and `InitVar`. Mutable dataclasses and dataclass
+  classes remain unsupported. Unsupported nested values and cycles bypass caching.
+  This encodes input values only; the model source revision covers code changes.
 - Anything else → `Error` → the call runs uncached, reason recorded.
 - build123d value types (`Vector`, `Location`, …): added when the reference model
   needs one, not before.
@@ -207,13 +212,28 @@ on the reference model: `enclosure` calls `vent_grille` *positionally*
 (`finned_enclosure.py:168`) while `build_part` calls it *by keyword and omits
 unlisted defaults* (`builder.py:41-46`); both paths must share one entry.
 
-**Call-closure hashing** (`fastbuild/cache/analysis.py`, pure — returns findings as
+**Source revisions** (`fastbuild/sources.py`): every installed function uses the
+same revision in its key's `source_closure_hash` slot. The revision hashes the
+model's absolute path and the paths and contents of all `.py` files under its
+directory, or its outermost enclosing Python package. Hidden directories,
+`__pycache__`, `venv`, `env`, `site-packages`, and `node_modules` are excluded.
+Added, deleted, and unrelated Python files also change the revision. The viewer
+watches that tree and reloads on Python file changes. Ordinary local imports,
+including transitive and function-local imports, compile from the source snapshot
+without trusting timestamp-based bytecode. Local modules are evicted on reload;
+failed loads restore previous module entries. FastBuild itself is not reimported.
+Identical source reloads and exact reversions can reuse retained entries.
+External code, installed dependencies, custom/dynamic import loaders, and data
+files remain outside this contract and require restart or explicit uncached work.
+
+**Call-closure analysis** (`fastbuild/cache/analysis.py`, pure — returns findings as
 data; caller logs at the boundary): AST-based, not `co_names` — the harness owns the
 parse tree, and AST analysis sees inside comprehensions and lambdas (bytecode
 `co_names` misses them) and distinguishes calls from attribute access (avoiding
 method-name collisions like a global `offset` vs `build123d.offset`). At load time,
 compute each function's transitive closure of called model-file functions; fold
-their source hashes into `source_closure_hash`. The walk carries a visited set,
+their source hashes for analysis; installation substitutes the model source
+revision for keying. The walk carries a visited set,
 so self- and mutual recursion terminate (each cycle member's hash simply folds
 in every member's source; SCC-precise treatment is deferred). Unresolvable calls
 (dynamic dispatch, `getattr`, aliasing the analysis can't follow) → function
@@ -237,7 +257,8 @@ time, baked into the rebuilt `part_def.fn` before any build runs — **and**
 `build_part(part_def, values, store)` for the mesh half. Only `server.py`
 touches either seam; `load_model` itself stays store-free (see Wrapper wiring),
 so the CLI and tests are untouched.
-Survives file-save reloads (per-function source hashes invalidate precisely).
+Survives file-save reloads; source revisions prevent reuse across code edits,
+while identical reloads and exact reversions may reuse retained entries.
 **No lock — single-worker execution instead:** builds *and* file-save reloads
 run on one dedicated `ThreadPoolExecutor(max_workers=1)` (via
 `run_in_executor`, replacing all **three** `asyncio.to_thread` call sites:
@@ -480,7 +501,7 @@ scripts/bench_model.py        # Phase 0 stage/part timing + --sweep extremes che
 | File dependencies (`files=[...]`, hashing imported SVG/STEP) | Needs watch + hash machinery; impure-name skip flags the risk | Additive kwarg |
 | Subprocess build isolation + cancellation | Orthogonal to caching correctness | Keys serialize trivially |
 | Byte-accurate memory accounting / draft-LOD / shared disk cache | Polish on layers that don't exist | Promotion threshold + entry cap as manual outs |
-| **Module-level constants + sibling-module imports (v2 review, S4)** | A `WALL = 3` edit changes no function's source segment and trips no impure name → silent stale geometry on file-save reload; `from helpers import bracket` is invisible to both the file watcher (`server.py` watches only `model_path`) and the closure analysis. Known staleness hole — deferred, not covered by any Phase 1 mechanism | Planned fix, additive to the key scheme: fold one sha256 of the module's non-function top-level source (the "prelude") into every `source_closure_hash` — one hash per file, zero name resolution, over-invalidates but is sound, and covers `import`-line edits for free. For sibling modules: a resolved callee defined under the model file's directory but outside the model namespace → unsound → bypass. Until built: documented limitation; workaround is `no_cache` on functions reading module globals |
+| Fine-grained reuse across code edits | Current source revisions conservatively invalidate every function for any tracked Python edit, closing the earlier constant/property/local-import staleness gap | More precise dependency tracking can narrow invalidation later |
 
 ## 7. Reversed and cut from v1
 

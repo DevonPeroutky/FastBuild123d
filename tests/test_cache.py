@@ -8,6 +8,7 @@ import json
 import logging
 import pickle
 import textwrap
+from dataclasses import dataclass, field
 from pathlib import Path
 from time import perf_counter
 
@@ -166,6 +167,102 @@ def test_unencodable_and_cyclic_arguments_return_errors():
     assert isinstance(encode_arg(cyclic), Error)
 
 
+def test_frozen_dataclasses_encode_nested_values_and_all_fields():
+    @dataclass(frozen=True, slots=True)
+    class Settings:
+        width: float
+
+    @dataclass(frozen=True, slots=True)
+    class Base:
+        settings: Settings
+
+    @dataclass(frozen=True, slots=True)
+    class Dimensions(Base):
+        holes: int = field(compare=False)
+        offsets: tuple = field(default=(1, 2), init=False)
+
+        @property
+        def derived(self):
+            raise AssertionError("encoding must not evaluate properties")
+
+    first = Dimensions(Settings(127.0), 5)
+    same = Dimensions(Settings(127.0), 5)
+    assert first is not same
+    assert fp(first) == fp(same)
+    assert fp(first) != fp(Dimensions(Settings(128.0), 5))
+    assert first == Dimensions(Settings(127.0), 6)
+    assert fp(first) != fp(Dimensions(Settings(127.0), 6))
+    changed = Dimensions(Settings(127.0), 5)
+    object.__setattr__(changed, "offsets", (3, 4))
+    assert fp(first) != fp(changed)
+    assert fp(first) != fp(
+        {"settings": {"width": 127.0}, "holes": 5, "offsets": (1, 2)}
+    )
+
+
+def test_frozen_dataclass_keys_include_module_type_and_field_names():
+    def record(name, module, field_name):
+        cls = type(name, (), {
+            "__module__": module, "__annotations__": {field_name: int},
+        })
+        return dataclass(frozen=True)(cls)(1)
+
+    assert len({fp(record(*args)) for args in (
+        ("Dimensions", "one", "width"),
+        ("Dimensions", "two", "width"),
+        ("Settings", "one", "width"),
+        ("Dimensions", "one", "height"),
+    )}) == 4
+
+
+def test_dataclass_encoding_rejects_classes_mutable_and_unsupported_fields():
+    @dataclass
+    class Mutable:
+        width: int = 1
+
+    @dataclass(frozen=True)
+    class Frozen:
+        settings: object
+
+    for value in (Mutable(), Mutable, Frozen, Frozen(object()), Frozen(Mutable())):
+        assert isinstance(encode_arg(value), Error)
+    cyclic = []
+    value = Frozen(cyclic)
+    cyclic.append(value)
+    assert isinstance(encode_arg(value), Error)
+
+
+def test_frozen_dataclass_arguments_reuse_geometry(tmp_path):
+    source = textwrap.dedent("""
+        from dataclasses import dataclass
+        from build123d import Box
+        from fastbuild import App
+
+        app = App()
+
+        @dataclass(frozen=True)
+        class Dimensions:
+            width: float
+
+        def slab(dimensions):
+            return Box(dimensions.width, 8, 2)
+
+        @app.part()
+        def widget(width: float = 20):
+            return slab(Dimensions(width))
+    """)
+    installed, store = install(tmp_path, source)
+    slab = installed.namespace["slab"]
+    dimensions = installed.namespace["Dimensions"]
+    first = slab(dimensions(20))
+    same = slab(dimensions(20))
+    changed = slab(dimensions(30))
+    reverted = slab(dimensions(20))
+    assert first._fb_key == same._fb_key == reverted._fb_key
+    assert first._fb_key != changed._fb_key
+    assert (store.stats().hits, store.stats().misses) == (2, 2)
+
+
 def test_call_styles_and_omitted_defaults_share_one_key(tmp_path):
     installed, _ = install(tmp_path, CACHE_MODEL)
     ns = installed.namespace
@@ -223,7 +320,7 @@ def test_threshold_gates_storage_never_tagging(tmp_path):
     assert b1._fb_key == b2._fb_key
 
 
-def test_editing_a_comprehension_helper_invalidates_dependents(tmp_path):
+def test_editing_a_helper_invalidates_every_function_and_revert_reuses(tmp_path):
     store = Store(promote_threshold_s=0.0)
     installed, _ = install(tmp_path, CACHE_MODEL, store=store)
     ns = installed.namespace
@@ -236,7 +333,7 @@ def test_editing_a_comprehension_helper_invalidates_dependents(tmp_path):
     body = ns2["base"](20.0)
     ns2["studded"](body, 2)
     after_edit = store.stats()
-    assert after_edit.hits == baseline.hits + 1
+    assert after_edit.hits == baseline.hits
     assert after_edit.misses > baseline.misses
 
     restored, _ = install(tmp_path, CACHE_MODEL, store=store)

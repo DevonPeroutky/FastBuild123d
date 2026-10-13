@@ -19,6 +19,7 @@ from fastbuild.buildloop import BuildQueue, BuildRequest, TrailingDebounce
 from fastbuild.cache.store import FrozenStats, Store, build_outcome
 from fastbuild.errors import Error
 from fastbuild.harness import LoadedModel, install_cache, load_model
+from fastbuild.sources import is_model_source, source_root
 from fastbuild.protocol import (
     BuildError,
     BuildOk,
@@ -183,8 +184,10 @@ class ViewerServer:
         self.submit_selected()
 
     async def _watch(self) -> None:
+        root = source_root(self.model_path)
         async for _changes in awatch(
-            self.model_path,
+            root,
+            watch_filter=lambda _change, path: is_model_source(root, Path(path)),
             debounce=self.watch_debounce_ms,
             step=50,
             stop_event=self._stop,

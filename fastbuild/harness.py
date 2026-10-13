@@ -7,6 +7,7 @@ raised — a broken file mid-edit is an expected condition.
 
 import ast
 import hashlib
+import sys
 import traceback
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -18,6 +19,7 @@ from fastbuild.cache.store import Store
 from fastbuild.cache.wrap import memoize
 from fastbuild.errors import Error
 from fastbuild.registry import App, PartDef
+from fastbuild.sources import ModelImports, Sources, read_sources
 
 
 @dataclass(frozen=True)
@@ -28,6 +30,7 @@ class LoadedModel:
     function_hashes: Mapping[str, str]
     namespace: Mapping[str, Any]
     parts: Mapping[str, PartDef]
+    sources: Sources
 
 
 FunctionDef = ast.FunctionDef | ast.AsyncFunctionDef
@@ -61,34 +64,55 @@ def function_source_hashes(source: str) -> Mapping[str, str]:
 
 
 def load_model(path: Path) -> LoadedModel | Error:
+    path = path.resolve()
     try:
-        source = path.read_text()
-    except OSError as exc:
+        sources = read_sources(path)
+        source = sources.files[path].decode("utf-8")
+    except KeyError:
+        return Error(f"cannot read {path}: file is missing from model sources")
+    except (OSError, UnicodeError) as exc:
         return Error(f"cannot read {path}: {exc}")
 
-    namespace: dict = {"__name__": "__fastbuild_model__", "__file__": str(path)}
+    imports = ModelImports(sources)
+    package_root = (
+        sources.root.parent
+        if (sources.root / "__init__.py") in sources.files else sources.root
+    )
+    package = ".".join(path.parent.relative_to(package_root).parts)
+    namespace: dict = {
+        "__name__": "__fastbuild_model__", "__file__": str(path),
+        "__package__": package, "__builtins__": imports.builtins,
+    }
+    previous_modules = imports.evict_modules()
+    succeeded = False
     try:
         tree = ast.parse(source, filename=str(path))
         code = compile(tree, str(path), "exec")
         exec(code, namespace)
+
+        apps = [v for v in namespace.values() if isinstance(v, App)]
+        if not apps:
+            return Error(f"{path} defines no fastbuild App instance")
+        app = apps[0]
+        if not app.parts:
+            return Error(f"{path} registers no @part functions")
+        loaded = LoadedModel(
+            path=path,
+            source=source,
+            app=app,
+            function_hashes=function_source_hashes(source),
+            namespace=namespace,
+            parts=app.parts,
+            sources=sources,
+        )
+        succeeded = True
+        return loaded
     except Exception:
         return Error(traceback.format_exc())
-
-    apps = [v for v in namespace.values() if isinstance(v, App)]
-    if not apps:
-        return Error(f"{path} defines no fastbuild App instance")
-    app = apps[0]
-    if not app.parts:
-        return Error(f"{path} registers no @part functions")
-
-    return LoadedModel(
-        path=path,
-        source=source,
-        app=app,
-        function_hashes=function_source_hashes(source),
-        namespace=namespace,
-        parts=app.parts,
-    )
+    finally:
+        if not succeeded:
+            imports.evict_modules()
+            sys.modules.update(previous_modules)
 
 
 def _model_functions(namespace: Mapping[str, Any]) -> Mapping[str, FunctionType]:
@@ -123,7 +147,9 @@ def install_cache(loaded: LoadedModel, store: Store, *, debug: bool = False) -> 
         if verdict is None:
             continue
         wrapper = wrapped.get(fn) or memoize(
-            fn, qualname=fn.__name__, quality=verdict, store=store, debug=debug
+            fn, qualname=fn.__name__,
+            quality=replace(verdict, closure_hash=loaded.sources.digest),
+            store=store, debug=debug,
         )
         wrapped[fn] = wrapper
         namespace[name] = wrapper  # type: ignore[index]

@@ -7,7 +7,7 @@ anything outside it is an `Error`, which callers treat as "run uncached".
 
 import hashlib
 from collections.abc import Mapping as MappingABC
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from typing import Mapping, Union
 
@@ -64,6 +64,17 @@ def encode_arg(obj: object, _depth: int = 0) -> Encoded | Error:
         return Primitive(f"{type(obj).__qualname__}.{obj.name}")
     if obj is None or isinstance(obj, (bool, int, float, str)):
         return Primitive(repr(obj))
+    if is_dataclass(obj) and not isinstance(obj, type):
+        if not type(obj).__dataclass_params__.frozen:
+            return Error(f"un-encodable mutable dataclass {type(obj).__qualname__}")
+        items = []
+        for field in fields(obj):
+            encoded = encode_arg(getattr(obj, field.name), _depth + 1)
+            if isinstance(encoded, Error):
+                return Error(f"field '{field.name}': {encoded.message}")
+            items.append(Composite("pair", (Primitive(repr(field.name)), encoded)))
+        kind = f"dataclass:{type(obj).__module__}.{type(obj).__qualname__}"
+        return Composite(kind, tuple(items))
     if isinstance(obj, (tuple, list)):
         items = []
         for element in obj:
