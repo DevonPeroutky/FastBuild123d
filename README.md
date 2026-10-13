@@ -2,6 +2,9 @@
 
 A browser UI for [build123d](https://github.com/gumyr/build123d) models that is generated directly from the code and has two way caching (both of the UI inputs and the code itself) to enable live, responsive updates of the parameters.
 
+https://github.com/user-attachments/assets/ab291672-6d0f-4e3c-a8ef-c5fe7fe363e9
+
+
 ## Quick start
 
 Try a bundled example with [uv](https://docs.astral.sh/uv/):
