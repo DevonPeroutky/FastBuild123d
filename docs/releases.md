@@ -40,12 +40,7 @@ uv run --locked poe release
 ```
 
 This task is a dry run. It does not build, edit files, commit, tag, or publish.
-Feature branches are deliberately excluded from release calculation. For isolated
-policy checks, including a local build without publication:
-
-```sh
-uv run --locked python scripts/check_release.py --build
-```
+Feature branches are deliberately excluded from release calculation.
 
 ## One-time setup before merging the workflow
 
