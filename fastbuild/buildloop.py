@@ -9,11 +9,31 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Mapping
 
+from fastbuild.cache.keys import EncodedArgs, encode_arguments
+from fastbuild.errors import Error
+from fastbuild.registry import PartDef
+
+
+@dataclass(frozen=True)
+class BuildIdentity:
+    revision: str
+    part: str
+    values: EncodedArgs
+
+
+def build_identity(revision: str, part: str, values: Mapping[str, Any]) -> BuildIdentity:
+    encoded = encode_arguments(dict(sorted(values.items())))
+    assert not isinstance(encoded, Error)
+    return BuildIdentity(revision, part, encoded)
+
 
 @dataclass(frozen=True)
 class BuildRequest:
     part: str
     values: Mapping[str, Any]
+    identity: BuildIdentity | None = None
+    entry: PartDef | None = None
+    generation: int = 0
 
 
 class BuildQueue:

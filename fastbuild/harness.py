@@ -14,7 +14,9 @@ from pathlib import Path
 from types import FunctionType, MappingProxyType
 from typing import Any, Iterator, Mapping
 
-from fastbuild.cache.analysis import analyze_functions, resolve
+from fastbuild.cache.analysis import resolve
+from fastbuild.cache.graph import local_functions, analyze_local
+from fastbuild.cache.runtime import CacheRuntime
 from fastbuild.cache.store import Store
 from fastbuild.cache.wrap import memoize
 from fastbuild.errors import Error
@@ -31,6 +33,7 @@ class LoadedModel:
     namespace: Mapping[str, Any]
     parts: Mapping[str, PartDef]
     sources: Sources
+    namespaces: Mapping[Path, Mapping[str, Any]]
 
 
 FunctionDef = ast.FunctionDef | ast.AsyncFunctionDef
@@ -104,6 +107,7 @@ def load_model(path: Path) -> LoadedModel | Error:
             namespace=namespace,
             parts=app.parts,
             sources=sources,
+            namespaces=MappingProxyType({path: namespace, **{p: vars(m) for p, m in imports.modules.items()}}),
         )
         succeeded = True
         return loaded
@@ -115,48 +119,34 @@ def load_model(path: Path) -> LoadedModel | Error:
             sys.modules.update(previous_modules)
 
 
-def _model_functions(namespace: Mapping[str, Any]) -> Mapping[str, FunctionType]:
-    return {
-        name: value
-        for name, value in namespace.items()
-        if isinstance(value, FunctionType) and value.__globals__ is namespace
-    }
-
-
-def install_cache(loaded: LoadedModel, store: Store, *, debug: bool = False) -> LoadedModel:
-    """Boundary function, called only by the viewer server: replaces the model
-    namespace's functions in place with memoizing wrappers (call-time global
-    lookup makes composed calls find them) and returns a LoadedModel whose
-    `parts` carry the wrapped entry points — `registry` captured the raw
-    functions at decoration time, so namespace rebinding alone never reaches
-    `part_def.fn`.
-    """
-    namespace = loaded.namespace
-    model_functions = _model_functions(namespace)
-    marked = frozenset(
-        name
-        for name, fn in model_functions.items()
-        if getattr(fn, "_fb_no_cache", False)
-    ) | frozenset(
-        part.fn.__name__ for part in loaded.parts.values() if not part.cache
-    )
-    quality = resolve(analyze_functions(loaded.source, loaded.function_hashes), marked)
-    wrapped: dict[Any, Any] = {}
-    for name, fn in model_functions.items():
-        verdict = quality.get(fn.__name__)
-        if verdict is None:
-            continue
-        wrapper = wrapped.get(fn) or memoize(
-            fn, qualname=fn.__name__,
-            quality=replace(verdict, closure_hash=loaded.sources.digest),
-            store=store, debug=debug,
+def install_cache(
+    loaded: LoadedModel, store: Store, *, debug: bool = False,
+    runtime: CacheRuntime | None = None,
+) -> LoadedModel:
+    """Install one wrapper per function and rebind supported local aliases."""
+    runtime = runtime if runtime is not None else CacheRuntime()
+    functions = local_functions(loaded.sources.files, loaded.namespaces)
+    nodes = analyze_local(functions)
+    disabled = {part.fn for part in loaded.parts.values() if not part.cache}
+    marked = frozenset(item.identity for item in functions if item.fn in disabled)
+    quality = resolve(nodes, marked)
+    wrapped = {
+        item.fn: memoize(
+            item.fn, qualname=item.identity,
+            quality=replace(quality[item.identity], closure_hash=loaded.sources.digest),
+            store=store, runtime=runtime, debug=debug,
+            disable_tree=item.fn in disabled or any(
+                'runtime import' in reason for reason in quality[item.identity].reasons
+            ),
         )
-        wrapped[fn] = wrapper
-        namespace[name] = wrapper  # type: ignore[index]
-    parts = MappingProxyType(
-        {
-            name: replace(part, fn=wrapped[part.fn]) if part.fn in wrapped else part
-            for name, part in loaded.parts.items()
-        }
-    )
+        for item in functions
+    }
+    for namespace in loaded.namespaces.values():
+        for name, value in tuple(namespace.items()):
+            if isinstance(value, FunctionType) and value in wrapped:
+                namespace[name] = wrapped[value]
+    parts = MappingProxyType({
+        name: replace(part, fn=wrapped[part.fn]) if part.fn in wrapped else part
+        for name, part in loaded.parts.items()
+    })
     return replace(loaded, parts=parts)

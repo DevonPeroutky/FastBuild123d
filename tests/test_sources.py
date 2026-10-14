@@ -111,15 +111,21 @@ def test_transitive_helper_edits_reload_source_despite_stale_bytecode(
     store = Store(promote_threshold_s=0)
     first = installed(path, store).parts["assembly"].fn()
     unchanged = installed(path, store).parts["assembly"].fn()
-    assert first._fb_key == unchanged._fb_key
-    assert store.stats().hits == 1
+    if imports:
+        assert first._fb_key == unchanged._fb_key
+    else:
+        assert not hasattr(first, "_fb_key")
+    assert store.stats().hits == (1 if imports else 0)
     values.write_text("WIDTH = 30\n")
     os.utime(values, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
     changed = installed(path, store).parts["assembly"].fn()
     assert first.bounding_box().size.X == pytest.approx(20)
     assert changed.bounding_box().size.X == pytest.approx(30)
-    assert changed._fb_key != first._fb_key
-    assert store.stats().hits == 1
+    if imports:
+        assert changed._fb_key != first._fb_key
+    else:
+        assert not hasattr(changed, "_fb_key")
+    assert store.stats().hits == (1 if imports else 0)
 
 
 def test_failed_helper_reload_restores_previous_modules(tmp_path, helper_package):

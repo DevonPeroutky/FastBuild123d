@@ -646,7 +646,7 @@ SLOW_MODEL = textwrap.dedent(
 )
 
 
-async def test_reload_during_inflight_build_lands_after_its_broadcast(tmp_path):
+async def test_reload_suppresses_inflight_build_broadcast(tmp_path):
     path = tmp_path / "model.py"
     path.write_text(SLOW_MODEL)
     server = ViewerServer(path, drag_debounce_s=0.02)
@@ -668,6 +668,7 @@ async def test_reload_during_inflight_build_lands_after_its_broadcast(tmp_path):
     ]
     init_indexes = [i for i, m in enumerate(client.messages) if m["type"] == "init"]
     assert update_indexes and init_indexes
-    assert update_indexes[0] < init_indexes[0]
+    assert len(update_indexes) == 1
+    assert update_indexes[0] > init_indexes[0]
     assert server.state is not None and "slug" in server.state.parts
     await server.shutdown()

@@ -77,11 +77,13 @@ class _SnapshotLoader(SourceFileLoader):
     def exec_module(self, module):
         module.__dict__["__builtins__"] = self.importer.builtins
         super().exec_module(module)
+        self.importer.modules[Path(self.path).resolve()] = module
 
 
 class ModelImports(MetaPathFinder):
     def __init__(self, sources: Sources):
         self.sources = sources
+        self.modules = {}
         self.builtins = {**vars(builtins), "__import__": self.import_module}
 
     def find_spec(self, fullname, path=None, target=None):

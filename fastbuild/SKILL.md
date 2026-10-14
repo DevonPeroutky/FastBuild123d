@@ -84,9 +84,9 @@ not at build time — for signatures the UI cannot represent:
 
 ## Writing cache-friendly parts
 
-The cache memoizes **top-level functions defined in the model file**, keyed by each
-function's source (including the source of every same-file function it calls) plus
-its arguments. Passing a cached result into another function carries provenance, so
+The cache memoizes **synchronous top-level functions in the model and loaded local
+helper modules**, keyed by defining source path, qualified name, the whole source
+revision, and bound arguments. Passing a cached result into another function carries provenance, so
 unchanged stages hit even when a downstream parameter changes.
 
 Structure that makes caching work:
@@ -96,7 +96,10 @@ Structure that makes caching work:
   substructure — nothing can be skipped when one parameter changes.
 - **Use algebra mode, not Builder mode.** Calls inside `with BuildPart():` bypass
   the cache entirely (a warning is logged once; silence it with `@no_cache`).
-- **Call helpers by their global name.** Calling through a local variable holding a
+- **Use module-level imports.** Direct imports, aliases, relative imports,
+  module-qualified calls, and transitive re-exports of local functions are supported.
+  Only modules actually loaded from the snapshot are wrapped; unused files are not imported.
+  Calling through a local variable holding a
   function (`op = make_fin; op(...)`) makes the call target unresolvable and forces
   a bypass.
 - **Pass only encodable arguments** between cached functions: numbers, strings,
@@ -118,7 +121,18 @@ Things that disable caching (each cascades to every caller of the function):
 
 - Referencing an impure name in the body: `open`, `random`, `time`, `environ`,
   `input`, `import_step`, `import_svg`.
-- `@no_cache` on the function, or `@app.part(cache=False)` on the entry point.
+- `@no_cache` on the function propagates to recognized callers across local modules.
+  Other helpers it calls can still cache independently.
+
+`@app.part(cache=False)` disables geometry lookup, insertion, and provenance tagging
+throughout that execution, including shared helpers. Enabled parts can still cache
+those helpers; existing entries are retained. Function-local imports and recognized
+dynamic imports also disable caching in their callers and nested execution. The
+independent tessellation cache remains enabled.
+
+Methods, nested functions, callback containers, external modules, and custom
+decorator machinery are not independently memoized. Analysis is conservative,
+but it is not a comprehensive purity checker.
 
 Code edits invalidate every function's cache key. FastBuild snapshots all `.py`
 files beneath the model's directory (or its enclosing Python package), including

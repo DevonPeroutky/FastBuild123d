@@ -7,6 +7,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from dataclasses import dataclass
 from typing import Any, Callable, Mapping
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -15,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from watchfiles import awatch
 
 from fastbuild.builder import BuildFailure, BuildOutput, build_part
-from fastbuild.buildloop import BuildQueue, BuildRequest, TrailingDebounce
+from fastbuild.buildloop import BuildQueue, BuildRequest, TrailingDebounce, BuildIdentity, build_identity
+from fastbuild.cache.runtime import CacheRuntime
 from fastbuild.cache.store import FrozenStats, Store, build_outcome
 from fastbuild.errors import Error
 from fastbuild.harness import LoadedModel, install_cache, load_model
@@ -71,6 +73,13 @@ def cache_summary(
     }
 
 
+@dataclass(frozen=True)
+class SuccessfulScene:
+    identity: BuildIdentity
+    shapes: Mapping[str, Any]
+    status: BuildOk
+
+
 class ViewerServer:
     def __init__(
         self,
@@ -85,7 +94,10 @@ class ViewerServer:
         self.debug = debug
         self.state: SessionState | None = None
         self.load_error: str | None = None
-        self.last_good: dict[str, Mapping[str, Any]] = {}
+        self.last_good: dict[str, SuccessfulScene] = {}
+        self.revision = ""
+        self.generation = 0
+        self.cache_runtime = CacheRuntime()
         self.last_status: ServerMessage | None = None
         self.clients: set[WebSocket] = set()
         self.queue = BuildQueue(self._run_build)
@@ -105,13 +117,21 @@ class ViewerServer:
     def _set_state(self, action: str, new_state: SessionState) -> None:
         if self.debug:
             log.debug("%s", format_transition(action, self.state, new_state))
+        changed = (self.state is None or self.state.selected != new_state.selected
+                   or self.state.parts is not new_state.parts
+                   or self.state.values[self.state.selected] != new_state.values[new_state.selected])
         self.state = new_state
+        if changed:
+            self.generation += 1
+            self.last_status = Building()
 
     async def _load_installed(self) -> LoadedModel | Error:
-        loaded = await self._in_worker(load_model, self.model_path)
-        if isinstance(loaded, Error):
-            return loaded
-        return install_cache(loaded, self.store, debug=self.debug)
+        def load_and_install():
+            loaded = load_model(self.model_path)
+            if isinstance(loaded, Error):
+                return loaded
+            return install_cache(loaded, self.store, debug=self.debug, runtime=self.cache_runtime)
+        return await self._in_worker(load_and_install)
 
     async def startup(self, watch: bool) -> None:
         loaded = await self._load_installed()
@@ -119,6 +139,7 @@ class ViewerServer:
             self.load_error = loaded.message
             self.last_status = BuildError(error=loaded.message)
         else:
+            self.revision = loaded.sources.digest
             self._set_state("startup", initial_state(loaded.parts))
             self.submit_selected()
         if watch:
@@ -136,44 +157,68 @@ class ViewerServer:
     def submit_selected(self) -> None:
         if self.state is None:
             return
+        self.last_status = Building()
         self.queue.submit(BuildRequest(
             part=self.state.selected,
             values=self.state.values[self.state.selected],
+            identity=self.current_identity(),
+            entry=self.state.parts[self.state.selected],
+            generation=self.generation,
         ))
 
+    def current_identity(self) -> BuildIdentity:
+        assert self.state is not None
+        return build_identity(self.revision, self.state.selected, self.state.values[self.state.selected])
+
+    def _current(self, request: BuildRequest) -> bool:
+        return (self.state is not None and request.generation == self.generation
+                and request.identity == self.current_identity())
+
+    def _build(self, request: BuildRequest):
+        assert request.entry is not None
+        if not request.entry.cache:
+            with self.cache_runtime.disabled():
+                return build_part(request.entry, request.values)
+        return build_part(request.entry, request.values)
+
     async def _run_build(self, request: BuildRequest) -> None:
-        if self.state is None or request.part not in self.state.parts:
+        if not self._current(request):
             return
-        part_def = self.state.parts[request.part]
-        await self.broadcast(Building())
+        part_def = request.entry
+        assert part_def is not None and request.identity is not None
+        self.last_status = Building()
+        await self.broadcast(self.last_status)
         before = self.store.stats()
         if self.debug:
             log.debug("%s", "\n" + f"── build {request.part} ".ljust(HEADER_WIDTH, "─"))
-        result = await self._in_worker(build_part, part_def, request.values)
+        result = await self._in_worker(self._build, request)
+        if not self._current(request):
+            return
         match result:
             case BuildOutput(part=part, shapes=shapes, timings=timings):
-                self.last_good[part] = shapes
-                await self.broadcast(ModelUpdate(part=part, shapes=shapes))
-                self.last_status = BuildOk(
+                status = BuildOk(
                     timings=timings,
-                    cache=cache_summary(
-                        before,
-                        self.store.stats(),
-                        getattr(part_def.fn, "stage_count", None),
-                    ),
+                    cache=cache_summary(before, self.store.stats(), getattr(part_def.fn, "stage_count", None)),
                 )
-                await self.broadcast(self.last_status)
+                self.last_good[part] = SuccessfulScene(request.identity, shapes, status)
+                self.last_status = status
+                await self.broadcast(ModelUpdate(part=part, shapes=shapes))
+                await self.broadcast(status)
             case BuildFailure(traceback=tb):
                 self.last_status = BuildError(error=tb)
                 await self.broadcast(self.last_status)
 
     async def reload(self) -> None:
+        self.generation += 1
+        self.last_status = Building()
         loaded = await self._load_installed()
         if isinstance(loaded, Error):
             self.last_status = BuildError(error=loaded.message)
             await self.broadcast(self.last_status)
             return
         self.load_error = None
+        self.revision = loaded.sources.digest
+        self.last_good = {name: scene for name, scene in self.last_good.items() if name in loaded.parts}
         self._set_state(
             "reload",
             initial_state(loaded.parts)
@@ -218,7 +263,7 @@ class ViewerServer:
             if self.state is not None and self.state.selected in self.last_good:
                 update = ModelUpdate(
                     part=self.state.selected,
-                    shapes=self.last_good[self.state.selected],
+                    shapes=self.last_good[self.state.selected].shapes,
                 )
                 await ws.send_text(json.dumps(encode(update)))
             if self.last_status is not None:
@@ -258,8 +303,14 @@ class ViewerServer:
                     return
                 self._set_state(f"select_part {part}", new_state)
                 await self.broadcast(init_message(self.state))
-                if part in self.last_good:
-                    await self.broadcast(ModelUpdate(part=part, shapes=self.last_good[part]))
+                self.drag.cancel()
+                scene = self.last_good.get(part)
+                entry = self.state.parts[part]
+                if (scene is not None and scene.identity == self.current_identity()
+                        and entry.cache and getattr(entry.fn, "_fb_cacheable", False)):
+                    self.last_status = scene.status
+                    await self.broadcast(ModelUpdate(part=part, shapes=scene.shapes))
+                    await self.broadcast(scene.status)
                 else:
                     self.submit_selected()
 

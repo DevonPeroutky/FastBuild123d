@@ -8,7 +8,7 @@ annotated, and several v1 bets are explicitly reversed (§7).
 
 Make slider-driven parameter iteration feel live by ensuring a parameter change only
 pays for the kernel work that parameter actually affects. Mechanism: re-execute the
-whole model on every change, but automatically memoize model-file functions with
+whole model on every change, but automatically memoize supported model and local-module functions with
 provenance-chained keys so unchanged calls are dict lookups — including their display
 meshes.
 
@@ -143,19 +143,24 @@ for completeness; Phase 1's wiring only ever wraps plain module-level functions.
 ### Phase 1 — Auto-memoized geometry (the provenance layer)
 
 **Wrapper wiring** (`harness.py`): `load_model(path) → LoadedModel | Error` stays
-pure and **store-free** — its signature does not change; it gains `namespace` and
+**store-free** — its signature does not change; it gains `namespace` and
 `parts` fields on `LoadedModel`. A separate boundary function
 
 ```python
 def install_cache(loaded: LoadedModel, store: Store) -> LoadedModel
 ```
 
-does the wrapping and returns a new `LoadedModel`: each model-file function in
-the namespace is replaced with a memoizing wrapper (membership test:
-`isinstance(fn, FunctionType) and fn.__globals__ is namespace` — the
-`bench_model.py` seam plus the type guard it actually uses, not "defined at top
-level"), and each `PartDef` is rebuilt with its wrapped function
-(`dataclasses.replace` — `PartDef` is frozen) into the new `parts` mapping.
+does the wrapping on the same worker that loads and builds models. The loader
+records namespaces of local modules actually loaded from its source snapshot;
+unused files are never imported for caching. Before mutation, an immutable call
+graph is constructed for synchronous top-level functions. Supported module-level
+bindings include direct imports, aliases, relative imports, module-qualified calls,
+and transitive imports/re-exports. Resolution reads module dictionaries without
+executing descriptors. Each original function gets one wrapper, installed across
+supported aliases and registered `PartDef` entry points. Function identity combines
+defining source path and qualified name, so names in different modules cannot collide.
+Methods, nested functions, arbitrary callback containers, external modules, and
+custom decorator machinery remain outside independent automatic memoization.
 **Only `server.py` calls `install_cache`.** The CLI (`cli.py:50`), the harness
 tests, and `bench_model.py` keep calling `load_model` unchanged and never see a
 store. Session state/migration reads parts from the `LoadedModel`, so the
@@ -231,7 +236,7 @@ data; caller logs at the boundary): AST-based, not `co_names` — the harness ow
 parse tree, and AST analysis sees inside comprehensions and lambdas (bytecode
 `co_names` misses them) and distinguishes calls from attribute access (avoiding
 method-name collisions like a global `offset` vs `build123d.offset`). At load time,
-compute each function's transitive closure of called model-file functions; fold
+compute each function's transitive closure of supported local functions; fold
 their source hashes for analysis; installation substitutes the model source
 revision for keying. The walk carries a visited set,
 so self- and mutual recursion terminate (each cycle member's hash simply folds
@@ -240,7 +245,7 @@ in every member's source; SCC-precise treatment is deferred). Unresolvable calls
 marked unsound → bypass, surfaced in stats.
 
 **Cacheability is a property of the closure, not the node** (v2 re-review): a
-function is cacheable iff it *and every transitive model-file callee* is
+function is cacheable iff it *and every transitive supported local callee* is
 cacheable — unsound, impure, and `@no_cache` are all contagious upward over the
 same closure the source hashes already traverse. Otherwise a cached caller's hit
 would short-circuit exactly the call §1 says must never be short-circuited:
@@ -565,3 +570,31 @@ scripts/bench_model.py        # Phase 0 stage/part timing + --sweep extremes che
   costs; threshold = copy-vs-build), H2 (§2.1 named parameters + stated
   ceiling), H3 (§2.3 qualified), H5 (one-mutator invariant, executor shutdown,
   three call sites), M1–M6, L1–L3
+
+
+## Execution policy and displayed results
+
+Each server owns a `CacheRuntime`, injected into its wrappers. Its instance-owned
+`ContextVar` implements a nestable `disabled()` context with token restoration in
+`finally`; this scoped policy is the accepted exception to the ambient-state rule.
+A `cache=False` entry point enters the context inside the build worker. All nested
+wrappers bypass geometry lookup, insertion, and provenance tagging, preserving
+bypass accounting/debug logging. Other executions and retained entries are unaffected.
+`@no_cache` still propagates upward through recognized callers, including local
+modules, but does not itself disable otherwise cacheable descendants. Function-local
+imports and recognized dynamic imports bypass both callers and nested execution;
+the graph is never extended during builds. Tessellation caching is independent.
+Analysis preserves external-library handling and does not promise full purity detection.
+
+A successful scene carries an immutable identity (whole-source revision, part name,
+canonical parameter values) and its own successful status. The server retains one
+last successful scene per part. Selection reuses it only for an identical identity
+and a cacheable, enabled entry point. Otherwise it builds, preserving the displayed
+scene during work and errors. Reload removes entries for deleted parts.
+
+Queued builds capture identity, entry point, values, and request generation. Results
+and errors publish only if still current; selection, parameter changes, and reload
+supersede old work. Superseded builds may fill geometry caches. Reconnect replays the
+selected part's retained scene with current status; an old scene never implies a
+fresh success. These identities are server-side only; the WebSocket protocol and
+one-scene-per-part retention limit are unchanged.

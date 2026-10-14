@@ -28,6 +28,7 @@ from fastbuild.cache.keys import (
     key_of,
 )
 from fastbuild.cache.store import Store
+from fastbuild.cache.runtime import CacheRuntime
 from fastbuild.errors import Error
 
 log = logging.getLogger("fastbuild")
@@ -81,9 +82,12 @@ def memoize(
     quality: Cacheability,
     store: Store,
     debug: bool = False,
+    runtime: CacheRuntime | None = None,
+    disable_tree: bool = False,
 ) -> Callable[..., Any]:
     """Wrap one model-file function. Not-cacheable functions still get a thin
     wrapper so bypasses show up in stats and the debug trace."""
+    runtime = runtime if runtime is not None else CacheRuntime()
     signature = inspect.signature(fn)
 
     def trace(args_text: str, key_text: str, outcome: str, started: float) -> None:
@@ -98,10 +102,15 @@ def memoize(
         def bypassing(*args: Any, **kwargs: Any) -> Any:
             started = perf_counter()
             store.note_bypass()
-            result = fn(*args, **kwargs)
+            if disable_tree:
+                with runtime.disabled():
+                    result = fn(*args, **kwargs)
+            else:
+                result = fn(*args, **kwargs)
             trace(_raw_args_text(args, kwargs), NO_KEY, f"BYPASS {reason}", started)
             return result
 
+        bypassing._fb_cacheable = False
         bypassing.stage_count = len(quality.members)  # type: ignore[attr-defined]
         bypassing._fb_wrapper = True  # type: ignore[attr-defined]
         return bypassing
@@ -118,6 +127,11 @@ def memoize(
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         nonlocal warned_builder_context
         started = perf_counter()
+        if runtime.is_disabled:
+            store.note_bypass()
+            result = fn(*args, **kwargs)
+            trace(_raw_args_text(args, kwargs), NO_KEY, "BYPASS disabled execution", started)
+            return result
         if _builder_active():
             store.note_bypass()
             if not warned_builder_context:
@@ -154,6 +168,7 @@ def memoize(
         trace(_encoded_args_text(encoded), key.short, "MISS", started)
         return result
 
+    wrapper._fb_cacheable = True
     wrapper.stage_count = len(quality.members)  # type: ignore[attr-defined]
     wrapper._fb_wrapper = True  # type: ignore[attr-defined]
     return wrapper
