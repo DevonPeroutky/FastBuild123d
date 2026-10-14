@@ -1,8 +1,17 @@
 # FastBuild123
 
-A browser UI for [build123d](https://github.com/gumyr/build123d) models that is generated directly from the code and has two way caching (both of the UI inputs and the code itself) to enable live, responsive updates of the parameters.
+A browser-based UI for [build123d](https://github.com/gumyr/build123d), parametric models, generated directly from your code. Two-way caching of both code and UI inputs keeps parameter changes and model previews fast and responsive. This means you (aka your AI agent) can write code to create your parameterized CAD models and get...
 
-## Quick start
+- **Agentic CAD modeling**: [Preloaded skills](#AI) let your agent inspect the model from any angle, giving it the visual context it needs to help refine your design.
+- **Manufacturing ready CAD**: Generate B-Rep and NURBS geometry and export precision CAD formats like STEP
+- **Live CAD UI previews**: Modify parameters and see the model update in real time.
+
+...and there's **No CAD knowledge required**. It definitely helps to know what you're doing, but if you're capable of describing what you want to an LLM, you can get pretty far.
+
+https://github.com/user-attachments/assets/ab291672-6d0f-4e3c-a8ef-c5fe7fe363e9
+
+
+## Demo
 
 Try a bundled example with [uv](https://docs.astral.sh/uv/):
 
@@ -10,14 +19,14 @@ Try a bundled example with [uv](https://docs.astral.sh/uv/):
 uvx fastbuild123 demo enclosure
 ```
 
-Install in your project:
+## Quick Start
 
 ```bash
+# Install package
 uv add fastbuild123      # or: pip install fastbuild123
 ```
 
-Save this as `my_model.py`:
-
+### 1. Annotate
 ```python
 from typing import Annotated
 from build123d import Box, Part
@@ -26,7 +35,7 @@ from fastbuild import App, Range
 app = App()
 
 @app.part()
-def block(
+def example_box(
     width: Annotated[float, Range(20, 200, step=1, unit="mm")] = 80,
     depth: float = 50,
     height: float = 30,
@@ -34,10 +43,10 @@ def block(
     return Box(width, depth, height)
 ```
 
-Open it in the browser:
+### 2. View your geometry
 
 ```bash
-fastbuild view my_model.py
+uv run fastbuild view my_model.py
 ```
 
 The viewer preserves your camera when rebuilding. If a build fails, it shows the
@@ -45,7 +54,7 @@ error and keeps the last working model.
 
 ## Parameters
 
-Every parameter needs a type annotation and a default value.
+Each parameter you annotate generates a control in the UI  (and can have defaults)
 
 | Type | Control |
 | --- | --- |
@@ -68,6 +77,8 @@ extension (`.step`/`.stp`/`.stl`).
 
 # AI
 
+Obviously, this is the section everyone will care about. The repo’s real value is that it lets you rapidly iterate on CAD models using AI agents. The agents modify the code, which generates an interactive UI you can use to explore and refine the design. You can then iterate by chatting with the agent, which already has the full context of your model.
+
 ## AI coding agents
 
 Install the bundled skill with API usage and caching guidance:
@@ -82,7 +93,6 @@ Re-run after upgrading. Omit `--install` to print the docs.
 ## Requirements
 
 Python 3.10–3.13 on macOS, Linux (glibc 2.31+, x86-64 or aarch64), or 64-bit Windows.
-The install is roughly 500 MB, mostly OpenCASCADE. Alpine/musl is not supported.
 
 ## Contributing and releases
 
@@ -91,5 +101,4 @@ for version rules, the local dry run, Trusted Publishing setup, and recovery.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Bundles three-cad-viewer (MIT), whose license is
-included at `fastbuild/static/vendor/LICENSE-three-cad-viewer`.
+MIT — see [LICENSE](LICENSE).
